@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Color palette based on the Sketch design.
 enum AppTheme {
     static let primaryGreen = Color(red: 45 / 255, green: 106 / 255, blue: 79 / 255) // #2D6A4F
     static let softGreen = Color(red: 143 / 255, green: 185 / 255, blue: 150 / 255) // #8FB996

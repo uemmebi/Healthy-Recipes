@@ -7,159 +7,181 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct RecipesHomeView: View {
-    @Query(sort: \StoredRecipe.createdAt, order: .forward) private var storedRecipes: [StoredRecipe]
-
+    @Query(sort: \StoredRecipe.createdAt, order: .forward)
+    private var records: [StoredRecipe]
     @State private var searchText = ""
     @State private var selectedCategory: RecipeCategory = .all
     @State private var showMicrophoneAlert = false
     @State private var showingNewRecipe = false
 
-    private var allRecipes: [Recipe] { storedRecipes.map(\.asRecipe) }
-    private var isFiltering: Bool {
-        selectedCategory != .all || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var allRecipes: [Recipe] { records.map(\.asRecipe) }
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedCategory != .all
     }
-
     private func matches(_ recipe: Recipe) -> Bool {
         let term = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let matchesText = term.isEmpty || recipe.title.localizedCaseInsensitiveContains(term)
-        let matchesCategory = selectedCategory == .all || recipe.categories.contains(selectedCategory)
-        return matchesText && matchesCategory
+        let textMatch = term.isEmpty || recipe.title.localizedCaseInsensitiveContains(term)
+            || recipe.ingredients.contains { $0.name.localizedCaseInsensitiveContains(term) }
+        return textMatch && (selectedCategory == .all || recipe.categories.contains(selectedCategory))
     }
-
+    // Never duplicate a result even if it is also in Favorites or Created by You.
+    private var searchResults: [Recipe] {
+        var seen = Set<String>()
+        return allRecipes.filter { matches($0) && seen.insert($0.id).inserted }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+    /// A simple, fully on-device recommendation. Favorite categories are weighted
+    /// most heavily; equal-scoring recipes rotate daily to keep the home fresh.
+    /// Prefer recipes with bundled artwork while the image catalog is incomplete.
     private var featured: Recipe? {
-        guard !isFiltering else { return nil }
-        return allRecipes.first { !$0.isUserCreated }
+        let catalog = allRecipes.filter { !$0.isUserCreated }
+        guard !catalog.isEmpty else { return nil }
+
+        let illustrated = catalog.filter { RecipeImageStore.image(named: $0.imageName) != nil }
+        let available = illustrated.isEmpty ? catalog : illustrated
+        let unseen = available.filter { !$0.isFavorite }
+        let candidates = unseen.isEmpty ? available : unseen
+
+        let favoriteCategories = allRecipes.filter(\.isFavorite).flatMap(\.categories)
+        let scores: [RecipeCategory: Int] = favoriteCategories.reduce(into: [:]) { counts, category in
+            counts[category, default: 0] += 1
+        }
+        let ranked = candidates.map { recipe in
+            (recipe: recipe, score: recipe.categories.reduce(0) { $0 + scores[$1, default: 0] })
+        }
+        let highest = ranked.map(\.score).max() ?? 0
+        let matches = ranked.filter { $0.score == highest }
+            .map(\.recipe)
+            .sorted { $0.id < $1.id }
+        guard !matches.isEmpty else { return nil }
+
+        let day = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970 / 86_400)
+        return matches[day % matches.count]
     }
-    private var filteredCatalog: [Recipe] {
-        guard isFiltering else { return [] }
-        return allRecipes.filter { !$0.isUserCreated && matches($0) }
+    private var created: [Recipe] { allRecipes.filter(\.isUserCreated) }
+    private var favorites: [Recipe] {
+        allRecipes.filter { $0.isFavorite && !$0.isUserCreated && $0.id != featured?.id }
     }
-    private var quickRecipes: [Recipe] {
-        allRecipes.filter { !$0.isUserCreated && $0.categories.contains(.quick) && matches($0) }
+    private var quick: [Recipe] {
+        let excluded = Set(created.map(\.id) + favorites.map(\.id) + [featured?.id].compactMap { $0 })
+        return allRecipes.filter {
+            $0.categories.contains(.quick) && !excluded.contains($0.id)
+        }
     }
-    private var createdRecipes: [Recipe] {
-        allRecipes.filter { $0.isUserCreated && matches($0) }
-    }
-    private var favoriteRecipes: [Recipe] {
-        allRecipes.filter { $0.isFavorite && matches($0) }
-    }
-    private var hasResults: Bool {
-        featured != nil || !filteredCatalog.isEmpty || !quickRecipes.isEmpty || !createdRecipes.isEmpty || !favoriteRecipes.isEmpty
+    private var remaining: [Recipe] {
+        let excluded = Set(created.map(\.id) + favorites.map(\.id) + quick.map(\.id) + [featured?.id].compactMap { $0 })
+        return allRecipes.filter { !excluded.contains($0.id) }
     }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center, spacing: 8) {
-                    Text("Recipes")
-                        .font(.system(size: 36, weight: .bold))
-                        .tracking(-0.6)
-                        .foregroundStyle(AppTheme.primaryText)
-                    Spacer(minLength: 0)
-                    Button { showingNewRecipe = true } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(AppTheme.primaryGreen)
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("Create recipe")
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 18)
+            LazyVStack(alignment: .leading, spacing: 0) {
+                Text("Recipes")
+                    .font(.system(size: 36, weight: .bold))
+                    .tracking(-0.6)
+                    .foregroundStyle(AppTheme.primaryText)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 18)
 
                 searchBar.padding(.horizontal, 16).padding(.top, 15)
                 categoryChips.padding(.top, 16)
 
-                if !hasResults && isFiltering {
-                    emptyResults.padding(.top, 70)
+                if isSearching {
+                    // During a search show only recipes, with NO section titles or See all links.
+                    if searchResults.isEmpty {
+                        emptyResults.padding(.top, 65)
+                    } else {
+                        verticalRecipes(searchResults)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 22)
+                    }
                 } else {
                     if let featured {
                         sectionTitle("For You")
-                            .padding(.horizontal, 16).padding(.top, 15)
+                            .padding(.horizontal, 16).padding(.top, 23)
                         FeaturedRecipeCard(recipe: featured)
                             .padding(.horizontal, 16).padding(.top, 15)
                     }
-                    // A filter affects the recipes, not the section headings.
-                    // Show each catalog result once, rather than duplicating the featured card.
-                    if !filteredCatalog.isEmpty {
-                        sectionTitle("For You")
-                            .padding(.horizontal, 16).padding(.top, 24)
-                        recipeCarousel(filteredCatalog).padding(.top, 16)
+                    if !quick.isEmpty {
+                        catalogSection("Quick & Easy", collection: .quickAndEasy, recipes: quick)
                     }
-                    if !quickRecipes.isEmpty && !isFiltering {
-                        sectionHeading("Quick & Easy", collection: .quickAndEasy)
-                            .padding(.horizontal, 16).padding(.top, 29)
-                        recipeCarousel(quickRecipes).padding(.top, 17)
+                    if !favorites.isEmpty {
+                        catalogSection("Your Favorites", collection: .favorites, recipes: favorites)
                     }
-                    if !createdRecipes.isEmpty || !isFiltering {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            sectionTitle("Created by You")
-                            Spacer(minLength: 4)
-                            if !createdRecipes.isEmpty {
-                                NavigationLink(value: RecipeCollection.createdByYou) {
-                                    Text("See all").foregroundStyle(AppTheme.primaryGreen)
-                                }
-                            } else {
-                                Button("Add recipe") { showingNewRecipe = true }
-                                    .foregroundStyle(AppTheme.primaryGreen)
-                            }
-                        }
-                        .font(.system(size: 16))
-                        .padding(.horizontal, 16).padding(.top, 27)
-
-                        if createdRecipes.isEmpty {
-                            Button { showingNewRecipe = true } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 27))
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("Create your first recipe")
-                                            .font(.system(size: 16, weight: .semibold))
-                                        Text("Add ingredients with amounts and cooking steps.")
-                                            .font(.system(size: 13))
-                                            .foregroundStyle(AppTheme.secondaryText)
-                                    }
-                                    Spacer(minLength: 0)
-                                }
-                                .foregroundStyle(AppTheme.primaryGreen)
-                                .padding(16)
-                                .background(AppTheme.chipBackground, in: RoundedRectangle(cornerRadius: 16))
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 16).padding(.top, 14)
-                        } else {
-                            recipeCarousel(createdRecipes).padding(.top, 17)
-                        }
+                    // Personal recipes are shown only after the first one is saved.
+                    if !created.isEmpty {
+                        catalogSection("Created by You", collection: .createdByYou, recipes: created)
                     }
-                    if !favoriteRecipes.isEmpty {
-                        sectionHeading("Your Favorites", collection: .favorites)
-                            .padding(.horizontal, 16).padding(.top, 27)
-                        recipeCarousel(favoriteRecipes).padding(.top, 17)
+                    if !remaining.isEmpty {
+                        catalogSection("More Recipes", collection: .moreRecipes, recipes: remaining)
                     }
                 }
             }
-            .padding(.bottom, 145)
+            .padding(.bottom, 165)
         }
         .background(AppTheme.background)
-        .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showingNewRecipe) {
-            NavigationStack { RecipeEditorView() }.tint(AppTheme.primaryGreen)
+        // Attached only to the home view: a pushed recipe detail doesn't contain this button.
+        .overlay(alignment: .bottom) {
+            Button { showingNewRecipe = true } label: {
+                Label("Create a Recipe", systemImage: "plus.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 51)
+                    .foregroundStyle(.white)
+                    .background(AppTheme.primaryGreen, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 76) // Above the persistent floating tab bar.
+            .accessibilityIdentifier("create-recipe-button")
         }
+        .sheet(isPresented: $showingNewRecipe) {
+            NavigationStack { RecipeEditorView() }
+                .tint(AppTheme.primaryGreen)
+        }
+        .toolbar(.hidden, for: .navigationBar)
         .alert("Voice Search", isPresented: $showMicrophoneAlert) {
-            Button("OK", role: .cancel) { }
+            Button("OK", role: .cancel) {}
         } message: {
-            Text("Voice search is not yet available. You can search by typing.")
+            Text("Voice search is not yet available. Try typing a recipe or ingredient.")
         }
     }
 
-    private func recipeCarousel(_ recipes: [Recipe]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 13) {
-                ForEach(recipes) { recipe in CompactRecipeCard(recipe: recipe) }
+    // The regular home keeps the original image-led, horizontally scrolling cards.
+    private func catalogSection(_ title: String, collection: RecipeCollection, recipes: [Recipe]) -> some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionTitle(title)
+                Spacer(minLength: 8)
+                NavigationLink(value: collection) {
+                    Text("See all")
+                        .font(.system(size: 15))
+                        .foregroundStyle(AppTheme.primaryGreen)
+                }
+                .accessibilityLabel("See all \(title) recipes")
             }
             .padding(.horizontal, 16)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 13) {
+                    ForEach(recipes) { recipe in
+                        CompactRecipeCard(recipe: recipe, width: 158)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+        .padding(.top, 28)
+    }
+
+    private func verticalRecipes(_ recipes: [Recipe]) -> some View {
+        LazyVStack(spacing: 12) {
+            ForEach(recipes) { recipe in
+                VerticalRecipeRow(recipe: recipe)
+            }
         }
     }
 
@@ -171,21 +193,22 @@ struct RecipesHomeView: View {
             TextField("Search", text: $searchText)
                 .font(.system(size: 18))
                 .foregroundStyle(AppTheme.primaryText)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .submitLabel(.search)
+                .accessibilityIdentifier("recipe-search")
             if searchText.isEmpty {
                 Button { showMicrophoneAlert = true } label: {
                     Image(systemName: "mic.fill")
                         .font(.system(size: 21))
                         .foregroundStyle(Color.gray.opacity(0.82))
                         .frame(width: 30, height: 40)
-                }
-                .buttonStyle(.plain)
+                }.buttonStyle(.plain)
             } else {
                 Button { searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }.buttonStyle(.plain)
             }
         }
         .padding(.leading, 14).padding(.trailing, 11)
@@ -202,12 +225,11 @@ struct RecipesHomeView: View {
                         withAnimation(.easeOut(duration: 0.18)) { selectedCategory = category }
                     } label: {
                         Text(category.rawValue)
-                            .font(.system(size: 16, weight: category == selectedCategory ? .medium : .regular))
-                            .foregroundStyle(category == selectedCategory ? Color.white : AppTheme.primaryText)
+                            .font(.system(size: 16, weight: selectedCategory == category ? .medium : .regular))
+                            .foregroundStyle(selectedCategory == category ? .white : AppTheme.primaryText)
                             .frame(width: category.chipWidth, height: 47)
-                            .background(Capsule().fill(category == selectedCategory ? AppTheme.primaryGreen : AppTheme.chipBackground))
-                    }
-                    .buttonStyle(.plain)
+                            .background(Capsule().fill(selectedCategory == category ? AppTheme.primaryGreen : AppTheme.chipBackground))
+                    }.buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 16)
@@ -215,29 +237,23 @@ struct RecipesHomeView: View {
     }
 
     private func sectionTitle(_ title: String) -> some View {
-        Text(title).font(.system(size: 23, weight: .semibold))
-            .tracking(-0.35).foregroundStyle(AppTheme.primaryText)
-    }
-
-    private func sectionHeading(_ title: String, collection: RecipeCollection) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            sectionTitle(title)
-            Spacer(minLength: 4)
-            NavigationLink(value: collection) {
-                Text("See all").font(.system(size: 16)).foregroundStyle(AppTheme.primaryGreen)
-            }
-        }
+        Text(title)
+            .font(.system(size: 23, weight: .semibold))
+            .foregroundStyle(AppTheme.primaryText)
     }
 
     private var emptyResults: some View {
         VStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 35, weight: .light))
+                .font(.system(size: 32))
                 .foregroundStyle(AppTheme.secondaryText)
-            Text("No recipes found").font(.headline)
-            Text("Try a different search or category.")
-                .font(.subheadline).foregroundStyle(AppTheme.secondaryText)
+            Text("No matching recipes")
+                .font(.system(size: 17, weight: .semibold))
+            Text("Try another name, ingredient or filter.")
+                .font(.system(size: 14))
+                .foregroundStyle(AppTheme.secondaryText)
         }
-        .frame(maxWidth: .infinity).padding(.horizontal, 20)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
     }
 }

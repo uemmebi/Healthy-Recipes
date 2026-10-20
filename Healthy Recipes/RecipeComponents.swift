@@ -14,10 +14,8 @@ struct RecipeArtwork: View {
 
     var body: some View {
         Group {
-            if let bytes = recipe.imageData, let photo = UIImage(data: bytes) {
+            if let photo = RecipeImageStore.image(named: recipe.imageName) {
                 Image(uiImage: photo).resizable().scaledToFill()
-            } else if !recipe.imageName.isEmpty {
-                Image(recipe.imageName).resizable().scaledToFill()
             } else {
                 ZStack {
                     AppTheme.chipBackground
@@ -156,5 +154,99 @@ struct CompactRecipeCard: View {
             .padding(.top, 8)
         }
         .frame(width: width, alignment: .leading)
+    }
+}
+
+
+struct VerticalRecipeRow: View {
+    let recipe: Recipe
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 13) {
+            NavigationLink(value: recipe) {
+                RecipeArtwork(recipe: recipe)
+                    .frame(width: 108, height: 104)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink(value: recipe) {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text(recipe.title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppTheme.primaryText)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                    HStack(spacing: 7) {
+                        Image(systemName: "clock")
+                        Text("\(recipe.minutes) min")
+                        if let calories = recipe.calories {
+                            Text("·")
+                            Text("~\(calories) kcal")
+                        }
+                    }
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(AppTheme.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            FavoriteButton(recipe: recipe)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, 4)
+        .background(AppTheme.background, in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+/// Images bundled with the app use their asset name (matching the recipe title).
+/// User-selected images live as JPEG files in Application Support/RecipePhotos.
+/// Both sources are represented by a single String: imageName.
+enum RecipeImageStore {
+    static let missingImageName = "NoImage"
+    private static let prefix = "user-photo-"
+
+    private static var folder: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory,
+                                             in: .userDomainMask)[0]
+        return base.appendingPathComponent("RecipePhotos", isDirectory: true)
+    }
+
+    private static func localURL(for imageName: String) -> URL? {
+        guard imageName.hasPrefix(prefix), imageName.hasSuffix(".jpg"),
+              !imageName.contains("/"), !imageName.contains("\\") else { return nil }
+        return folder.appendingPathComponent(imageName, isDirectory: false)
+    }
+
+    static func image(named imageName: String) -> UIImage? {
+        if let url = localURL(for: imageName) {
+            return UIImage(contentsOfFile: url.path)
+        }
+        return UIImage(named: imageName)
+    }
+
+    /// Saves a selected photo separately from SwiftData; only the filename is persisted.
+    static func save(_ image: UIImage) throws -> String {
+        guard let data = image.jpegData(compressionQuality: 0.78) else {
+            throw CocoaError(.fileWriteInapplicableStringEncoding)
+        }
+        return try saveJPEGData(data)
+    }
+
+    /// Used only when migrating old records that contain inline image bytes.
+    static func saveJPEGData(_ data: Data) throws -> String {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = prefix + UUID().uuidString + ".jpg"
+        try data.write(to: folder.appendingPathComponent(name), options: .atomic)
+        return name
+    }
+
+    static func deleteIfLocal(named imageName: String) {
+        guard let url = localURL(for: imageName) else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 }

@@ -9,13 +9,14 @@ import SwiftUI
 import SwiftData
 
 enum RecipeCollection: String, Hashable {
-    case quickAndEasy, favorites, createdByYou
+    case quickAndEasy, favorites, createdByYou, moreRecipes
 
     var title: String {
         switch self {
         case .quickAndEasy: "Quick & Easy"
         case .favorites: "Your Favorites"
         case .createdByYou: "Created by You"
+        case .moreRecipes: "More Recipes"
         }
     }
 }
@@ -28,19 +29,15 @@ struct RecipeCollectionView: View {
 
     private var recipes: [Recipe] {
         let values = records.map(\.asRecipe)
-
         switch collection {
         case .quickAndEasy:
-            return values.filter {
-                !$0.isUserCreated &&
-                $0.categories.contains(.quick)
-            }
-
+            return values.filter { !$0.isUserCreated && $0.categories.contains(.quick) }
         case .favorites:
             return values.filter(\.isFavorite)
-
         case .createdByYou:
             return values.filter(\.isUserCreated)
+        case .moreRecipes:
+            return values.filter { !$0.isUserCreated }
         }
     }
 

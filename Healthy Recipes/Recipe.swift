@@ -9,23 +9,24 @@ import Foundation
 import SwiftUI
 import SwiftData
 
+/// Plain UI value. The *only* persisted source of truth is StoredRecipe in SwiftData.
 struct Recipe: Identifiable, Hashable {
     let id: String
     let title: String
     let minutes: Int
     let calories: Int?
-    let imageName: String
+    var imageName: String = "NoImage"
     let categories: Set<RecipeCategory>
     let ingredients: [RecipeIngredient]
     let steps: [String]
     let baseServings: Int
-    var imageData: Data? = nil
     var isUserCreated: Bool = false
     var isFavorite: Bool = false
 
     var caloriesText: String { calories.map { "~\($0) kcal" } ?? "Calories not provided" }
 }
 
+/// A stable ID allows one shopping-list entry per recipe ingredient.
 struct RecipeIngredient: Identifiable, Codable, Hashable {
     var id: String
     var name: String
@@ -75,13 +76,14 @@ enum RecipeCategory: String, CaseIterable, Codable, Hashable, Identifiable {
     }
 }
 
+/// Catalog recipes AND user recipes share the same SwiftData model.
 @Model
 final class StoredRecipe {
     var id: String
     var title: String
     var minutes: Int
     var calories: Int?
-    var imageName: String
+    var imageName: String = "NoImage"
     var categoryNames: [String]
     var ingredientIDs: [String]
     var ingredientNames: [String]
@@ -89,14 +91,15 @@ final class StoredRecipe {
     var ingredientUnits: [String]
     var steps: [String]
     var baseServings: Int
+    // Legacy image bytes kept only to migrate existing user photos without data loss.
     @Attribute(.externalStorage) var photoData: Data?
     var isUserCreated: Bool
     var isFavorite: Bool
     var createdAt: Date
 
-    init(id: String, title: String, minutes: Int, calories: Int?, imageName: String,
+    init(id: String, title: String, minutes: Int, calories: Int?, imageName: String = "NoImage",
          categories: [RecipeCategory], ingredients: [RecipeIngredient], steps: [String],
-         baseServings: Int = 2, photoData: Data? = nil,
+         baseServings: Int = 1,
          isUserCreated: Bool = false, isFavorite: Bool = false) {
         self.id = id
         self.title = title
@@ -109,13 +112,14 @@ final class StoredRecipe {
         self.ingredientQuantities = ingredients.map(\.quantity)
         self.ingredientUnits = ingredients.map(\.unit)
         self.steps = steps
-        self.baseServings = max(2, baseServings)
-        self.photoData = photoData
+        self.baseServings = max(1, baseServings)
+        self.photoData = nil
         self.isUserCreated = isUserCreated
         self.isFavorite = isFavorite
         self.createdAt = .now
     }
 
+    /// Stored directly as SwiftData arrays, with no JSON file or JSON serialization.
     var ingredients: [RecipeIngredient] {
         get {
             let count = min(ingredientIDs.count, ingredientNames.count,
@@ -138,10 +142,11 @@ final class StoredRecipe {
                imageName: imageName,
                categories: Set(categoryNames.compactMap(RecipeCategory.init(rawValue:))),
                ingredients: ingredients, steps: steps, baseServings: baseServings,
-               imageData: photoData, isUserCreated: isUserCreated, isFavorite: isFavorite)
+               isUserCreated: isUserCreated, isFavorite: isFavorite)
     }
 }
 
+/// Shopping list also lives in the same local SwiftData database.
 @Model
 final class GroceryItem {
     var id: String

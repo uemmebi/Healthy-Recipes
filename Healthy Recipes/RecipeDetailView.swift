@@ -15,7 +15,7 @@ struct RecipeDetailView: View {
     @Query private var cartItems: [GroceryItem]
 
     let recipe: Recipe
-    @State private var servings = 2
+    @State private var servings = 1
     @State private var showingEditor = false
     @State private var confirmingDelete = false
     @State private var deleteFailed = false
@@ -61,12 +61,12 @@ struct RecipeDetailView: View {
                     Text("Servings")
                         .font(.system(size: 19, weight: .semibold))
                     Spacer()
-                    Button { servings = max(2, servings - 1) } label: {
+                    Button { servings = max(1, servings - 1) } label: {
                         Image(systemName: "minus")
                             .font(.system(size: 16, weight: .semibold))
                             .frame(width: 40, height: 40)
                     }
-                    .disabled(servings <= 2)
+                    .disabled(servings <= 1)
                     .accessibilityLabel("Decrease servings")
                     Text("\(servings)")
                         .font(.system(size: 19, weight: .semibold, design: .rounded))
@@ -173,7 +173,7 @@ struct RecipeDetailView: View {
                 }
             }
         }
-        .onAppear { servings = max(2, current.baseServings) }
+        .onAppear { servings = 1 }
         .sheet(isPresented: $showingEditor) {
             if let stored { NavigationStack { RecipeEditorView(existing: stored) } }
         }
@@ -223,9 +223,11 @@ struct RecipeDetailView: View {
         for grocery in cartItems where grocery.sourceRecipeID == stored.id {
             modelContext.delete(grocery)
         }
+        let oldImageName = stored.imageName
         modelContext.delete(stored)
         do {
             try modelContext.save()
+            RecipeImageStore.deleteIfLocal(named: oldImageName)
             dismiss()
         } catch {
             deleteFailed = true
