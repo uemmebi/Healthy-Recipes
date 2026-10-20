@@ -57,6 +57,25 @@ struct RecipeDetailView: View {
                 .foregroundStyle(AppTheme.secondaryText)
                 .padding(.bottom, 22)
 
+                if current.proteinGrams != nil || current.carbsGrams != nil || current.fatGrams != nil {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Nutrition")
+                                .font(.system(size: 20, weight: .semibold))
+                            Spacer()
+                            Text(current.isUserCreated ? "per serving" : "per serving · estimated")
+                                .font(.system(size: 12))
+                                .foregroundStyle(AppTheme.secondaryText)
+                        }
+                        HStack(spacing: 8) {
+                            macroTile("Protein", current.proteinGrams)
+                            macroTile("Carbs", current.carbsGrams)
+                            macroTile("Fat", current.fatGrams)
+                        }
+                    }
+                    .padding(.bottom, 25)
+                }
+
                 HStack {
                     Text("Servings")
                         .font(.system(size: 19, weight: .semibold))
@@ -186,6 +205,22 @@ struct RecipeDetailView: View {
         .alert("Could not delete recipe", isPresented: $deleteFailed) {
             Button("OK", role: .cancel) { }
         } message: { Text("Please try again.") }
+    }
+
+    private func macroTile(_ label: String, _ grams: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(AppTheme.secondaryText)
+            Text(grams.map { "\(QuantityText.format($0)) g" } ?? "—")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AppTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(AppTheme.chipBackground, in: RoundedRectangle(cornerRadius: 13))
     }
 
     private func itemIsCurrentInCart(_ item: RecipeIngredient) -> Bool {

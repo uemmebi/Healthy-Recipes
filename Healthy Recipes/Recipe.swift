@@ -20,6 +20,10 @@ struct Recipe: Identifiable, Hashable {
     let ingredients: [RecipeIngredient]
     let steps: [String]
     let baseServings: Int
+    // Nutrition estimates per single serving, never multiplied by selected servings.
+    var proteinGrams: Double? = nil
+    var carbsGrams: Double? = nil
+    var fatGrams: Double? = nil
     var isUserCreated: Bool = false
     var isFavorite: Bool = false
 
@@ -62,6 +66,9 @@ enum RecipeCategory: String, CaseIterable, Codable, Hashable, Identifiable {
     case highProtein = "High Protein"
     case pasta = "Pasta"
     case vegetarian = "Vegetarian"
+    case lowFat = "Low Fat"
+    case highCarb = "High Carb"
+    case lowCarb = "Low Carb"
 
     var id: String { rawValue }
 
@@ -70,9 +77,37 @@ enum RecipeCategory: String, CaseIterable, Codable, Hashable, Identifiable {
         case .all: 64
         case .quick: 86
         case .highProtein: 137
+        case .lowFat: 104
+        case .highCarb: 113
+        case .lowCarb: 108
         case .pasta: 80
         case .vegetarian: 116
         }
+    }
+}
+
+/// App-specific discovery labels, not regulated nutrition claims.
+/// Missing macros do not trigger nutrition-based labels.
+enum RecipeClassification {
+    static func categories(minutes: Int, ingredients: [RecipeIngredient],
+                           protein: Double?, carbs: Double?, fat: Double?,
+                           chosen: Set<RecipeCategory>) -> Set<RecipeCategory> {
+        // Only Vegetarian can be set manually for now. Everything else is derived.
+        var result = chosen.intersection([.vegetarian])
+        if minutes < 20 { result.insert(.quick) }
+        // Require pasta as an ingredient; zucchini noodles and rice noodles are not pasta.
+        let pastaNames = #"\b(pasta|spaghetti|penne|fusilli|linguine|macaroni|farfalle|rigatoni|tagliatelle|fettuccine|lasagne|lasagna|orecchiette|tortellini)\b"#
+        if ingredients.contains(where: { $0.name.range(of: pastaNames,
+                                                       options: [.regularExpression, .caseInsensitive]) != nil }) {
+            result.insert(.pasta)
+        }
+        if let protein, protein >= 25 { result.insert(.highProtein) }
+        if let fat, fat <= 10 { result.insert(.lowFat) }
+        if let carbs {
+            if carbs >= 50 { result.insert(.highCarb) }
+            if carbs <= 25 { result.insert(.lowCarb) }
+        }
+        return result
     }
 }
 
@@ -83,6 +118,9 @@ final class StoredRecipe {
     var title: String
     var minutes: Int
     var calories: Int?
+    var proteinGrams: Double? = nil
+    var carbsGrams: Double? = nil
+    var fatGrams: Double? = nil
     var imageName: String = "NoImage"
     var categoryNames: [String]
     var ingredientIDs: [String]
@@ -100,13 +138,20 @@ final class StoredRecipe {
     init(id: String, title: String, minutes: Int, calories: Int?, imageName: String = "NoImage",
          categories: [RecipeCategory], ingredients: [RecipeIngredient], steps: [String],
          baseServings: Int = 1,
-         isUserCreated: Bool = false, isFavorite: Bool = false) {
+         isUserCreated: Bool = false, isFavorite: Bool = false,
+         proteinGrams: Double? = nil, carbsGrams: Double? = nil, fatGrams: Double? = nil) {
         self.id = id
         self.title = title
         self.minutes = minutes
         self.calories = calories
+        self.proteinGrams = proteinGrams
+        self.carbsGrams = carbsGrams
+        self.fatGrams = fatGrams
         self.imageName = imageName
-        self.categoryNames = categories.map(\.rawValue)
+        self.categoryNames = RecipeClassification.categories(
+            minutes: minutes, ingredients: ingredients, protein: proteinGrams,
+            carbs: carbsGrams, fat: fatGrams, chosen: Set(categories))
+            .map(\.rawValue).sorted()
         self.ingredientIDs = ingredients.map(\.id)
         self.ingredientNames = ingredients.map(\.name)
         self.ingredientQuantities = ingredients.map(\.quantity)
@@ -140,8 +185,12 @@ final class StoredRecipe {
     var asRecipe: Recipe {
         Recipe(id: id, title: title, minutes: minutes, calories: calories,
                imageName: imageName,
-               categories: Set(categoryNames.compactMap(RecipeCategory.init(rawValue:))),
+               categories: RecipeClassification.categories(
+                   minutes: minutes, ingredients: ingredients, protein: proteinGrams,
+                   carbs: carbsGrams, fat: fatGrams,
+                   chosen: Set(categoryNames.compactMap(RecipeCategory.init(rawValue:)))),
                ingredients: ingredients, steps: steps, baseServings: baseServings,
+               proteinGrams: proteinGrams, carbsGrams: carbsGrams, fatGrams: fatGrams,
                isUserCreated: isUserCreated, isFavorite: isFavorite)
     }
 }

@@ -52,6 +52,9 @@ struct RecipeEditorView: View {
     @State private var title: String
     @State private var minutesText: String
     @State private var caloriesText: String
+    @State private var proteinText: String
+    @State private var carbsText: String
+    @State private var fatText: String
     @State private var baseServings: Int
     @State private var categories: Set<RecipeCategory>
     @State private var ingredients: [IngredientDraft]
@@ -66,6 +69,9 @@ struct RecipeEditorView: View {
         _title = State(initialValue: existing?.title ?? "")
         _minutesText = State(initialValue: existing.map { String($0.minutes) } ?? "")
         _caloriesText = State(initialValue: existing?.calories.map { String($0) } ?? "")
+        _proteinText = State(initialValue: existing?.proteinGrams.map { QuantityText.format($0) } ?? "")
+        _carbsText = State(initialValue: existing?.carbsGrams.map { QuantityText.format($0) } ?? "")
+        _fatText = State(initialValue: existing?.fatGrams.map { QuantityText.format($0) } ?? "")
         _baseServings = State(initialValue: existing?.baseServings ?? 1)
         _categories = State(initialValue: Set(existing?.categoryNames.compactMap(RecipeCategory.init(rawValue:)) ?? []))
         _ingredients = State(initialValue: existing?.ingredients.map(IngredientDraft.init) ?? [IngredientDraft()])
@@ -73,10 +79,22 @@ struct RecipeEditorView: View {
         _imageName = State(initialValue: existing?.imageName ?? RecipeImageStore.missingImageName)
     }
 
+    private func nonnegativeNumber(_ text: String) -> Bool {
+        text.isEmpty || (Double(text.replacingOccurrences(of: ",", with: ".")).map {
+            $0.isFinite && $0 >= 0
+        } ?? false)
+    }
+
+    private func nutritionValue(_ text: String) -> Double? {
+        Double(text.replacingOccurrences(of: ",", with: "."))
+    }
+
     private var isValid: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         (Int(minutesText) ?? 0) > 0 &&
         (caloriesText.isEmpty || (Int(caloriesText) ?? -1) >= 0) &&
+        nonnegativeNumber(proteinText) && nonnegativeNumber(carbsText) &&
+        nonnegativeNumber(fatText) &&
         !ingredients.isEmpty && ingredients.allSatisfy(\.isValid) &&
         !steps.isEmpty && steps.allSatisfy { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
@@ -85,6 +103,7 @@ struct RecipeEditorView: View {
         Form {
             photoSection
             recipeDetailsSection
+            nutritionSection
             categoriesSection
             ingredientsSection
             preparationSection
@@ -169,9 +188,33 @@ struct RecipeEditorView: View {
         }
     }
 
+    private var nutritionSection: some View {
+        Section {
+            nutritionField("Protein", value: $proteinText)
+            nutritionField("Carbohydrates", value: $carbsText)
+            nutritionField("Fat", value: $fatText)
+        } header: {
+            Text("Macronutrients (per serving)")
+        } footer: {
+            Text("Enter grams for one serving. These amounts and calories remain per serving when Servings changes.")
+        }
+    }
+
+    private func nutritionField(_ title: String, value: Binding<String>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField("0", text: value)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 90)
+            Text("g").foregroundStyle(.secondary)
+        }
+    }
+
     private var categoriesSection: some View {
         Section("Categories") {
-            ForEach(RecipeCategory.allCases.filter { $0 != .all }) { category in
+            ForEach([RecipeCategory.vegetarian]) { category in
                 Toggle(category.rawValue, isOn: Binding(
                     get: { categories.contains(category) },
                     set: { value in
@@ -181,6 +224,11 @@ struct RecipeEditorView: View {
                 ))
                 .tint(AppTheme.primaryGreen)
             }
+            LabeledContent("Quick", value: "Automatic: under 20 min")
+            LabeledContent("Pasta", value: "Automatic: pasta ingredient")
+            Text("High Protein (≥25 g), Low Fat (≤10 g), High Carb (≥50 g) and Low Carb (≤25 g) are calculated from the macros per serving.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -198,13 +246,22 @@ struct RecipeEditorView: View {
                                 Text(unit).tag(unit)
                             }
                         }
+                        .pickerStyle(.menu)
                         .labelsHidden()
-                        .frame(width: 110)
-                        Spacer()
+                        .frame(width: 100)
+                        Spacer(minLength: 0)
                         Button(role: .destructive) {
-                            ingredients.removeAll { $0.id == ingredient.id }
-                        } label: { Image(systemName: "minus.circle") }
-                            .disabled(ingredients.count <= 1)
+                            removeIngredient(id: ingredient.id)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 21))
+                                .foregroundStyle(.red)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Remove ingredient \(ingredient.name)")
+                        .accessibilityIdentifier("remove-ingredient-\(ingredient.id)")
                     }
                     TextField("Ingredient name (e.g. tomatoes)", text: $ingredient.name)
                 }
@@ -232,6 +289,7 @@ struct RecipeEditorView: View {
                         steps.removeAll { $0.id == step.id }
                     } label: { Image(systemName: "minus.circle") }
                         .disabled(steps.count <= 1)
+                        .buttonStyle(.borderless)
                 }
                 .padding(.vertical, 5)
             }
@@ -245,11 +303,20 @@ struct RecipeEditorView: View {
         }
     }
 
+    private func removeIngredient(id: String) {
+        ingredients.removeAll { $0.id == id }
+    }
+
     private func save() {
         guard isValid, let minutes = Int(minutesText) else { return }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let categoriesList = categories.map { $0 }.sorted { $0.rawValue < $1.rawValue }
         let newIngredients = ingredients.map(\.stored)
+        let protein = nutritionValue(proteinText)
+        let carbs = nutritionValue(carbsText)
+        let fat = nutritionValue(fatText)
+        let categoriesList = RecipeClassification.categories(
+            minutes: minutes, ingredients: newIngredients, protein: protein,
+            carbs: carbs, fat: fat, chosen: categories).sorted { $0.rawValue < $1.rawValue }
         let newSteps = steps.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
         // Keep the previous file until the database update succeeds.
@@ -271,6 +338,9 @@ struct RecipeEditorView: View {
             existing.imageName = chosenName
             existing.minutes = minutes
             existing.calories = Int(caloriesText)
+            existing.proteinGrams = protein
+            existing.carbsGrams = carbs
+            existing.fatGrams = fat
             existing.baseServings = baseServings
             existing.categoryNames = categoriesList.map(\.rawValue)
             existing.ingredients = newIngredients
@@ -282,7 +352,8 @@ struct RecipeEditorView: View {
                 title: trimmedTitle, minutes: minutes, calories: Int(caloriesText),
                 imageName: chosenName, categories: categoriesList,
                 ingredients: newIngredients, steps: newSteps,
-                baseServings: baseServings, isUserCreated: true
+                baseServings: baseServings, isUserCreated: true,
+                proteinGrams: protein, carbsGrams: carbs, fatGrams: fat
             )
             context.insert(newRecipe)
         }

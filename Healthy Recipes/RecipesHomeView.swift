@@ -40,7 +40,7 @@ struct RecipesHomeView: View {
         let catalog = allRecipes.filter { !$0.isUserCreated }
         guard !catalog.isEmpty else { return nil }
 
-        let illustrated = catalog.filter { RecipeImageStore.image(named: $0.imageName) != nil }
+        let illustrated = catalog.filter { UIImage(named: $0.imageName) != nil }
         let available = illustrated.isEmpty ? catalog : illustrated
         let unseen = available.filter { !$0.isFavorite }
         let candidates = unseen.isEmpty ? available : unseen

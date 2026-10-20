@@ -31,6 +31,17 @@ enum RecipeSeeds {
             // The SwiftData record is the source of truth. Identifiers for shipped
             // ingredients are deterministic so grocery cart links survive app launches.
             for seed in allSeeds {
+                // Per-serving editorial nutrition estimates. The values are not certified.
+                if let estimate = nutritionEstimates[seed.id] {
+                    seed.proteinGrams = estimate.protein
+                    seed.carbsGrams = estimate.carbs
+                    seed.fatGrams = estimate.fat
+                }
+                let derived = RecipeClassification.categories(
+                    minutes: seed.minutes, ingredients: seed.ingredients,
+                    protein: seed.proteinGrams, carbs: seed.carbsGrams, fat: seed.fatGrams,
+                    chosen: Set(seed.categoryNames.compactMap(RecipeCategory.init(rawValue:))))
+                seed.categoryNames = derived.map(\.rawValue).sorted()
                 seed.ingredients = seed.ingredients.enumerated().map { index, ingredient in
                     var stable = ingredient
                     stable.id = "\(seed.id)-ingredient-\(index)"
@@ -42,6 +53,9 @@ enum RecipeSeeds {
                     if stored.title != seed.title { stored.title = seed.title }
                     if stored.imageName != seed.imageName { stored.imageName = seed.imageName }
                     if stored.calories != seed.calories { stored.calories = seed.calories }
+                    if stored.proteinGrams != seed.proteinGrams { stored.proteinGrams = seed.proteinGrams }
+                    if stored.carbsGrams != seed.carbsGrams { stored.carbsGrams = seed.carbsGrams }
+                    if stored.fatGrams != seed.fatGrams { stored.fatGrams = seed.fatGrams }
                     if stored.minutes != seed.minutes { stored.minutes = seed.minutes }
                     if stored.categoryNames != seed.categoryNames { stored.categoryNames = seed.categoryNames }
                     if stored.steps != seed.steps { stored.steps = seed.steps }
@@ -106,6 +120,53 @@ enum RecipeSeeds {
     private static func catalog() -> [StoredRecipe] {
         initialCatalog() + additionalCatalog()
     }
+
+    // Grams per ONE portion. Editorial approximations using ingredient-based
+    // reference compositions (USDA FoodData Central) and published dish examples.
+    // Not individually lab-tested or a nutrition-label database. See docs/NUTRITION_SOURCES.md.
+    // Keys match the IDs below, so updates preserve user favorites.
+    private static let nutritionEstimates: [String: (protein: Double, carbs: Double, fat: Double)] = [
+        "catalog-salmon-bowl": (40, 72, 28),
+        "catalog-caprese": (13, 10, 18),
+        "catalog-couscous": (14, 58, 16),
+        "catalog-chickpeas": (14, 43, 11),
+        "catalog-avocado-toast-with-eggs": (24, 42, 26),
+        "catalog-overnight-oats": (14, 51, 11),
+        "catalog-greek-yogurt-parfait": (24, 45, 6),
+        "catalog-chia-seed-pudding": (8, 22, 12),
+        "catalog-banana-oat-pancakes": (14, 60, 8),
+        "catalog-green-smoothie": (7, 34, 2),
+        "catalog-quinoa-salad": (15, 61, 11),
+        "catalog-greek-salad": (12, 14, 26),
+        "catalog-chicken-caesar-salad": (44, 30, 19),
+        "catalog-grilled-chicken-and-vegetables": (50, 20, 15),
+        "catalog-chicken-stir-fry": (45, 37, 7),
+        "catalog-baked-salmon-with-vegetables": (36, 28, 24),
+        "catalog-tuna-and-white-bean-salad": (30, 41, 10),
+        "catalog-turkey-lettuce-wraps": (32, 22, 10),
+        "catalog-vegetable-omelette": (21, 11, 18),
+        "catalog-lentil-soup": (17, 52, 7),
+        "catalog-spinach-and-chickpea-curry": (17, 56, 15),
+        "catalog-tofu-stir-fry": (25, 32, 15),
+        "catalog-vegetable-buddha-bowl": (17, 67, 16),
+        "catalog-sweet-potato-and-black-bean-bowl": (16, 75, 16),
+        "catalog-hummus-and-veggie-sticks": (9, 28, 12),
+        "catalog-zucchini-noodles-with-pesto": (11, 18, 21),
+        "catalog-whole-wheat-pasta-with-tomato-and-spinach": (17, 66, 10),
+        "catalog-shrimp-and-avocado-salad": (32, 19, 20),
+        "catalog-roasted-veggie-wrap": (15, 55, 14),
+        "catalog-broccoli-and-chickpea-traybake": (15, 43, 14),
+        "catalog-vegetable-minestrone": (12, 44, 6),
+        "catalog-shakshuka": (20, 25, 16),
+        "catalog-chicken-quinoa-bowl": (45, 54, 13),
+        "catalog-mediterranean-baked-cod": (40, 18, 15),
+        "catalog-baked-sweet-potato-with-chickpeas": (16, 73, 13),
+        "catalog-vegetable-frittata": (25, 15, 21),
+        "catalog-baked-oatmeal-with-berries": (13, 51, 10),
+        "catalog-chicken-and-vegetable-soup": (36, 23, 9),
+        "catalog-black-bean-and-corn-salad": (17, 66, 5),
+        "catalog-berry-protein-smoothie": (30, 29, 5),
+    ]
 
     private static func initialCatalog() -> [StoredRecipe] {
         [
