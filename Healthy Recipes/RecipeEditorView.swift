@@ -29,8 +29,9 @@ private struct IngredientDraft: Identifiable {
             .replacingOccurrences(of: ",", with: "."))
     }
     var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        (parsedAmount ?? 0) > 0
+        guard let parsedAmount else { return false }
+        return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            parsedAmount.isFinite && parsedAmount > 0 && !unit.isEmpty
     }
     var stored: RecipeIngredient {
         RecipeIngredient(id: id, name: name.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -68,35 +69,54 @@ struct RecipeEditorView: View {
         self.existing = existing
         _title = State(initialValue: existing?.title ?? "")
         _minutesText = State(initialValue: existing.map { String($0.minutes) } ?? "")
-        _caloriesText = State(initialValue: existing?.calories.map { String($0) } ?? "")
-        _proteinText = State(initialValue: existing?.proteinGrams.map { QuantityText.format($0) } ?? "")
-        _carbsText = State(initialValue: existing?.carbsGrams.map { QuantityText.format($0) } ?? "")
-        _fatText = State(initialValue: existing?.fatGrams.map { QuantityText.format($0) } ?? "")
-        _baseServings = State(initialValue: existing?.baseServings ?? 1)
+        // Stored nutrition is per single serving; the editor shows totals for baseServings.
+        let servings = min(24, max(1, existing?.baseServings ?? 1))
+        _caloriesText = State(initialValue: existing?.calories.map { String($0 * servings) } ?? "")
+        _proteinText = State(initialValue: existing?.proteinGrams.map { QuantityText.format($0 * Double(servings)) } ?? "")
+        _carbsText = State(initialValue: existing?.carbsGrams.map { QuantityText.format($0 * Double(servings)) } ?? "")
+        _fatText = State(initialValue: existing?.fatGrams.map { QuantityText.format($0 * Double(servings)) } ?? "")
+        _baseServings = State(initialValue: min(24, max(1, existing?.baseServings ?? 1)))
         _categories = State(initialValue: Set(existing?.categoryNames.compactMap(RecipeCategory.init(rawValue:)) ?? []))
         _ingredients = State(initialValue: existing?.ingredients.map(IngredientDraft.init) ?? [IngredientDraft()])
         _steps = State(initialValue: existing?.steps.map(StepDraft.init) ?? [StepDraft()])
         _imageName = State(initialValue: existing?.imageName ?? RecipeImageStore.missingImageName)
     }
 
-    private func nonnegativeNumber(_ text: String) -> Bool {
-        text.isEmpty || (Double(text.replacingOccurrences(of: ",", with: ".")).map {
-            $0.isFinite && $0 >= 0
-        } ?? false)
+    private func numericValue(_ text: String) -> Double? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        guard let number = Double(value), number.isFinite else { return nil }
+        return number
     }
 
-    private func nutritionValue(_ text: String) -> Double? {
-        Double(text.replacingOccurrences(of: ",", with: "."))
+    private func optionalNonnegative(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || (numericValue(trimmed).map { $0 >= 0 } ?? false)
+    }
+
+    private func nutritionPerServing(_ text: String) -> Double? {
+        guard let total = numericValue(text) else { return nil }
+        return total / Double(baseServings)
+    }
+
+    private var caloriesPerServing: Int? {
+        let trimmed = caloriesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let total = Int(trimmed), total >= 0 else { return nil }
+        return Int((Double(total) / Double(baseServings)).rounded())
     }
 
     private var isValid: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        (Int(minutesText) ?? 0) > 0 &&
-        (caloriesText.isEmpty || (Int(caloriesText) ?? -1) >= 0) &&
-        nonnegativeNumber(proteinText) && nonnegativeNumber(carbsText) &&
-        nonnegativeNumber(fatText) &&
-        !ingredients.isEmpty && ingredients.allSatisfy(\.isValid) &&
-        !steps.isEmpty && steps.allSatisfy { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let trimmedMinutes = minutesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCalories = caloriesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            (Int(trimmedMinutes).map { $0 > 0 } ?? false) &&
+            (1...24).contains(baseServings) &&
+            (trimmedCalories.isEmpty || (Int(trimmedCalories).map { $0 >= 0 } ?? false)) &&
+            optionalNonnegative(proteinText) &&
+            optionalNonnegative(carbsText) &&
+            optionalNonnegative(fatText) &&
+            !ingredients.isEmpty && ingredients.allSatisfy(\.isValid)
+        // Photo, vegetarian status, calories, macros and preparation steps are optional.
     }
 
     var body: some View {
@@ -104,7 +124,7 @@ struct RecipeEditorView: View {
             photoSection
             recipeDetailsSection
             nutritionSection
-            categoriesSection
+            vegetarianToggle
             ingredientsSection
             preparationSection
         }
@@ -178,13 +198,46 @@ struct RecipeEditorView: View {
                 Text("min").foregroundStyle(.secondary)
             }
             HStack {
-                Text("Calories for 1 serving (optional)")
+                Text("Calories (optional)")
                 Spacer()
                 TextField("kcal", text: $caloriesText)
                     .keyboardType(.numberPad).multilineTextAlignment(.trailing)
                     .frame(width: 70)
             }
-            Stepper("Base servings: \(baseServings)", value: $baseServings, in: 1...24)
+            HStack(spacing: 12) {
+                Text("Servings")
+                Spacer()
+                Button {
+                    baseServings = max(1, baseServings - 1)
+                } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(width: 40, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(baseServings == 1)
+                .accessibilityLabel("Decrease servings")
+
+                Text("\(baseServings)")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .frame(minWidth: 24)
+                    .accessibilityLabel("\(baseServings) servings")
+
+                Button {
+                    baseServings = min(24, baseServings + 1)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(width: 40, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(baseServings == 24)
+                .accessibilityLabel("Increase servings")
+            }
+            .tint(AppTheme.primaryGreen)
         }
     }
 
@@ -194,9 +247,9 @@ struct RecipeEditorView: View {
             nutritionField("Carbohydrates", value: $carbsText)
             nutritionField("Fat", value: $fatText)
         } header: {
-            Text("Macronutrients (per serving)")
+            Text("Macronutrients (optional)")
         } footer: {
-            Text("Enter grams for one serving. These amounts and calories remain per serving when Servings changes.")
+            Text("Enter grams for \(baseServings) servings")
         }
     }
 
@@ -212,23 +265,16 @@ struct RecipeEditorView: View {
         }
     }
 
-    private var categoriesSection: some View {
-        Section("Categories") {
-            ForEach([RecipeCategory.vegetarian]) { category in
-                Toggle(category.rawValue, isOn: Binding(
-                    get: { categories.contains(category) },
-                    set: { value in
-                        if value { categories.insert(category) }
-                        else { categories.remove(category) }
-                    }
-                ))
-                .tint(AppTheme.primaryGreen)
-            }
-            LabeledContent("Quick", value: "Automatic: under 20 min")
-            LabeledContent("Pasta", value: "Automatic: pasta ingredient")
-            Text("High Protein (≥25 g), Low Fat (≤10 g), High Carb (≥50 g) and Low Carb (≤25 g) are calculated from the macros per serving.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+    private var vegetarianToggle: some View {
+        Section {
+            Toggle("Vegetarian", isOn: Binding(
+                get: { categories.contains(.vegetarian) },
+                set: { selected in
+                    if selected { categories.insert(.vegetarian) }
+                    else { categories.remove(.vegetarian) }
+                }
+            ))
+            .tint(AppTheme.primaryGreen)
         }
     }
 
@@ -260,6 +306,7 @@ struct RecipeEditorView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.borderless)
+                        .disabled(ingredients.count == 1)
                         .accessibilityLabel("Remove ingredient \(ingredient.name)")
                         .accessibilityIdentifier("remove-ingredient-\(ingredient.id)")
                     }
@@ -273,7 +320,7 @@ struct RecipeEditorView: View {
         } header: {
             Text("Ingredients")
         } footer: {
-            Text("Enter amounts for the base servings. The recipe scales them automatically.")
+            Text("A recipe needs at least one ingredient with a name and a quantity greater than zero.")
         }
     }
 
@@ -297,27 +344,31 @@ struct RecipeEditorView: View {
                 Label("Add preparation step", systemImage: "plus.circle.fill")
             }
         } header: {
-            Text("Preparation")
+            Text("Preparation (optional)")
         } footer: {
             Text("Write a separate step for every action, including cooking times and temperatures.")
         }
     }
 
     private func removeIngredient(id: String) {
+        guard ingredients.count > 1 else { return }
         ingredients.removeAll { $0.id == id }
     }
 
     private func save() {
-        guard isValid, let minutes = Int(minutesText) else { return }
+        guard isValid,
+              let minutes = Int(minutesText.trimmingCharacters(in: .whitespacesAndNewlines))
+        else { return }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let newIngredients = ingredients.map(\.stored)
-        let protein = nutritionValue(proteinText)
-        let carbs = nutritionValue(carbsText)
-        let fat = nutritionValue(fatText)
+        let protein = nutritionPerServing(proteinText)
+        let carbs = nutritionPerServing(carbsText)
+        let fat = nutritionPerServing(fatText)
         let categoriesList = RecipeClassification.categories(
             minutes: minutes, ingredients: newIngredients, protein: protein,
             carbs: carbs, fat: fat, chosen: categories).sorted { $0.rawValue < $1.rawValue }
         let newSteps = steps.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
 
         // Keep the previous file until the database update succeeds.
         let previousName = existing?.imageName ?? RecipeImageStore.missingImageName
@@ -337,7 +388,7 @@ struct RecipeEditorView: View {
             existing.title = trimmedTitle
             existing.imageName = chosenName
             existing.minutes = minutes
-            existing.calories = Int(caloriesText)
+            existing.calories = caloriesPerServing
             existing.proteinGrams = protein
             existing.carbsGrams = carbs
             existing.fatGrams = fat
@@ -349,7 +400,7 @@ struct RecipeEditorView: View {
         } else {
             let newRecipe = StoredRecipe(
                 id: "user-" + UUID().uuidString,
-                title: trimmedTitle, minutes: minutes, calories: Int(caloriesText),
+                title: trimmedTitle, minutes: minutes, calories: caloriesPerServing,
                 imageName: chosenName, categories: categoriesList,
                 ingredients: newIngredients, steps: newSteps,
                 baseServings: baseServings, isUserCreated: true,

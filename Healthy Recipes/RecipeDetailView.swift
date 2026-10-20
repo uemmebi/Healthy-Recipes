@@ -23,175 +23,58 @@ struct RecipeDetailView: View {
 
     private var stored: StoredRecipe? { storedRecipes.first { $0.id == recipe.id } }
     private var current: Recipe { stored?.asRecipe ?? recipe }
+    private var preparationSteps: [String] {
+        current.steps
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                GeometryReader { geo in
-                    RecipeArtwork(recipe: current)
-                        .frame(width: geo.size.width, height: 230)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .frame(height: 230)
-                .padding(.bottom, 19)
+                header
+                    .padding(.bottom, 15)
 
-                HStack(alignment: .top, spacing: 12) {
-                    Text(current.title)
-                        .font(.system(size: 28, weight: .bold))
-                        .tracking(-0.4)
-                        .foregroundStyle(AppTheme.primaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    FavoriteButton(recipe: current, prominent: true)
-                }
-                .padding(.bottom, 12)
+                RecipeArtwork(recipe: current)
+                    .frame(height: 195)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .padding(.bottom, 17)
 
-                HStack(spacing: 16) {
-                    Label("\(current.minutes) min", systemImage: "clock")
-                    if current.calories != nil {
-                        Label(current.caloriesText + " / serving", systemImage: "flame")
-                    }
-                }
-                .font(.system(size: 14))
-                .foregroundStyle(AppTheme.secondaryText)
-                .padding(.bottom, 22)
+                titleAndSummary
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 20)
 
-                if current.proteinGrams != nil || current.carbsGrams != nil || current.fatGrams != nil {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("Nutrition")
-                                .font(.system(size: 20, weight: .semibold))
-                            Spacer()
-                            Text(current.isUserCreated ? "per serving" : "per serving · estimated")
-                                .font(.system(size: 12))
-                                .foregroundStyle(AppTheme.secondaryText)
-                        }
-                        HStack(spacing: 8) {
-                            macroTile("Protein", current.proteinGrams)
-                            macroTile("Carbs", current.carbsGrams)
-                            macroTile("Fat", current.fatGrams)
-                        }
-                    }
+                if current.proteinGrams != nil || current.carbsGrams != nil ||
+                   current.fatGrams != nil {
+                    RecipeNutritionPanel(
+                        proteinGrams: current.proteinGrams,
+                        carbsGrams: current.carbsGrams,
+                        fatGrams: current.fatGrams
+                    )
                     .padding(.bottom, 25)
                 }
 
-                HStack {
-                    Text("Servings")
-                        .font(.system(size: 19, weight: .semibold))
-                    Spacer()
-                    Button { servings = max(1, servings - 1) } label: {
-                        Image(systemName: "minus")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 40, height: 40)
-                    }
-                    .disabled(servings <= 1)
-                    .accessibilityLabel("Decrease servings")
-                    Text("\(servings)")
-                        .font(.system(size: 19, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .frame(minWidth: 28)
-                        .accessibilityLabel("\(servings) servings")
-                    Button { servings = min(24, servings + 1) } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 40, height: 40)
-                    }
-                    .disabled(servings >= 24)
-                    .accessibilityLabel("Increase servings")
-                }
-                .foregroundStyle(AppTheme.primaryGreen)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(AppTheme.chipBackground, in: RoundedRectangle(cornerRadius: 16))
-                .padding(.bottom, 28)
+                addToMealPlanButton
+                    .padding(.bottom, 25)
 
-                HStack {
-                    Text("Ingredients")
-                        .font(.system(size: 22, weight: .semibold))
-                    Spacer()
-                    Button { addAllIngredients() } label: {
-                        Label("Add all", systemImage: "cart.badge.plus")
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                    .disabled(current.ingredients.isEmpty)
-                }
-                .foregroundStyle(AppTheme.primaryGreen)
-                .padding(.bottom, 12)
+                ingredientsSection
 
-                ForEach(current.ingredients) { item in
-                    HStack(alignment: .center, spacing: 10) {
-                        Text(QuantityText.format(item.scaled(for: servings, from: current.baseServings)))
-                            .font(.system(size: 15, weight: .semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(AppTheme.primaryGreen)
-                            .frame(minWidth: 32, alignment: .trailing)
-                        Text(item.unit)
-                            .font(.system(size: 13))
-                            .foregroundStyle(AppTheme.secondaryText)
-                            .frame(minWidth: 35, alignment: .leading)
-                        Text(item.name)
-                            .font(.system(size: 15))
-                            .foregroundStyle(AppTheme.primaryText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Button { addIngredient(item) } label: {
-                            Image(systemName: itemIsCurrentInCart(item) ? "checkmark.circle.fill" : "cart.badge.plus")
-                                .font(.system(size: 20))
-                                .foregroundStyle(AppTheme.primaryGreen)
-                                .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Add \(item.name) to Groceries")
-                    }
-                    .padding(.vertical, 5)
-                    Divider().overlay(AppTheme.chipBackground)
-                }
-                .padding(.bottom, 24)
-
-                Text("Preparation")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(AppTheme.primaryText)
-                    .padding(.bottom, 16)
-
-                ForEach(Array(current.steps.enumerated()), id: \.offset) { index, step in
-                    HStack(alignment: .top, spacing: 13) {
-                        Text("\(index + 1)")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .frame(width: 30, height: 30)
-                            .background(AppTheme.primaryGreen, in: Circle())
-                        Text(step)
-                            .font(.system(size: 16))
-                            .foregroundStyle(AppTheme.primaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(.bottom, 18)
+                if !preparationSteps.isEmpty {
+                    instructionsSection
+                        .padding(.top, 21)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 135)
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 120)
         }
-        .background(AppTheme.background)
-        .navigationTitle("Recipe")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbar {
-            if current.isUserCreated {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button { showingEditor = true } label: {
-                            Label("Edit recipe", systemImage: "pencil")
-                        }
-                        Button(role: .destructive) { confirmingDelete = true } label: {
-                            Label("Delete recipe", systemImage: "trash")
-                        }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                }
-            }
-        }
+        .background(AppTheme.background.ignoresSafeArea())
+        // A custom header matches the Sketch mockup without changing navigation behavior.
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear { servings = 1 }
         .sheet(isPresented: $showingEditor) {
             if let stored { NavigationStack { RecipeEditorView(existing: stored) } }
@@ -207,22 +90,254 @@ struct RecipeDetailView: View {
         } message: { Text("Please try again.") }
     }
 
-    private func macroTile(_ label: String, _ grams: Double?) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundStyle(AppTheme.secondaryText)
-            Text(grams.map { "\(QuantityText.format($0)) g" } ?? "—")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(AppTheme.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+    private var header: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 23, weight: .medium))
+                    Text("Back")
+                        .font(.system(size: 17, weight: .medium))
+                }
+                .foregroundStyle(AppTheme.primaryGreen)
+                .padding(.leading, 10)
+                .padding(.trailing, 14)
+                .frame(height: 42)
+                .background(AppTheme.searchBackground, in: Capsule())
+                .overlay(Capsule().strokeBorder(AppTheme.primaryGreen.opacity(0.08)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+
+            Spacer()
+
+            if current.isUserCreated {
+                Menu {
+                    Button { showingEditor = true } label: {
+                        Label("Edit recipe", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) { confirmingDelete = true } label: {
+                        Label("Delete recipe", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(AppTheme.primaryGreen)
+                        .frame(width: 44, height: 44)
+                        .background(.white, in: Circle())
+                }
+                .accessibilityLabel("Recipe options")
+            }
+
+            FavoriteButton(recipe: current, prominent: true)
+                .background(Circle().fill(.white).shadow(color: .black.opacity(0.12), radius: 6, y: 3))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(AppTheme.chipBackground, in: RoundedRectangle(cornerRadius: 13))
     }
 
+    private var titleAndSummary: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text(current.title)
+                .font(.system(size: 27, weight: .bold))
+                .tracking(-0.5)
+                .foregroundStyle(AppTheme.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(alignment: .center, spacing: 17) {
+                Label("\(current.minutes) min", systemImage: "clock")
+                if let calories = current.calories {
+                    Label("\(calories) kcal / serving", systemImage: "flame")
+                }
+            }
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(AppTheme.primaryGreen)
+            .lineLimit(1)
+            .minimumScaleFactor(0.79)
+        }
+    }
+
+    // Visual placeholder only: Meal Plan functionality is not implemented yet.
+    private var addToMealPlanButton: some View {
+        Button(action: {}) {
+            HStack(spacing: 10) {
+                Text("Add to Meal Plan")
+                Image(systemName: "calendar")
+                    .accessibilityHidden(true)
+            }
+            .font(.system(size: 18, weight: .medium))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
+            .background(AppTheme.primaryGreen, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Meal Plan feature coming soon")
+    }
+
+    private var ingredientsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 7) {
+                Text("Ingredients")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(AppTheme.primaryText)
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "person.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(AppTheme.secondaryText.opacity(0.7))
+                    .accessibilityHidden(true)
+
+                Text("Servings")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppTheme.secondaryText)
+                    .lineLimit(1)
+
+                servingsControl
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 9)
+
+            VStack(spacing: 0) {
+                ForEach(Array(current.ingredients.enumerated()), id: \.offset) { index, item in
+                    ingredientRow(item)
+
+                    if index < current.ingredients.count - 1 {
+                        Divider()
+                            .overlay(AppTheme.secondaryText.opacity(0.12))
+                            .padding(.horizontal, 16)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+            .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.075), radius: 16, y: 5)
+            .padding(.bottom, 14)
+
+            Button { addAllIngredients() } label: {
+                HStack(spacing: 8) {
+                    Text("Add to Groceries")
+                    Image(systemName: "cart")
+                }
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(AppTheme.primaryGreen)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .strokeBorder(AppTheme.primaryGreen, lineWidth: 1.2)
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 24))
+            }
+            .buttonStyle(.plain)
+            .disabled(current.ingredients.isEmpty)
+        }
+    }
+
+    private var servingsControl: some View {
+        HStack(spacing: 0) {
+            Button { servings = max(1, servings - 1) } label: {
+                Image(systemName: "minus")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 33, height: 38)
+            }
+            .disabled(servings <= 1)
+            .accessibilityLabel("Decrease servings")
+
+            Text("\(servings)")
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .frame(minWidth: 26)
+                .accessibilityLabel("\(servings) servings")
+
+            Button { servings = min(24, servings + 1) } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 33, height: 38)
+            }
+            .disabled(servings >= 24)
+            .accessibilityLabel("Increase servings")
+        }
+        .foregroundStyle(AppTheme.primaryGreen)
+        .background(Color.black.opacity(0.045), in: Capsule())
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Servings")
+    }
+
+    private func ingredientRow(_ item: RecipeIngredient) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text(item.name)
+                .font(.system(size: 16))
+                .foregroundStyle(AppTheme.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("\(QuantityText.format(item.scaled(for: servings, from: current.baseServings))) \(item.unit)")
+                .font(.system(size: 16, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(AppTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.83)
+
+            Button { addIngredient(item) } label: {
+                Image(systemName: itemIsCurrentInCart(item) ? "checkmark.circle.fill" : "cart.badge.plus")
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(AppTheme.primaryGreen)
+                    .frame(width: 37, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add \(item.name) to Groceries")
+        }
+        .padding(.leading, 18)
+        .padding(.trailing, 9)
+        .padding(.vertical, 5)
+        .frame(minHeight: 55)
+    }
+
+    private var instructionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Instructions")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(AppTheme.primaryText)
+                .padding(.horizontal, 12)
+
+            VStack(spacing: 0) {
+                ForEach(Array(preparationSteps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .top, spacing: 15) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .frame(width: 29, height: 29)
+                            .background(AppTheme.primaryGreen, in: Circle())
+                            .accessibilityHidden(true)
+
+                        Text(step)
+                            .font(.system(size: 16))
+                            .foregroundStyle(AppTheme.primaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 17)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Step \(index + 1): \(step)")
+
+                    if index < preparationSteps.count - 1 {
+                        Divider()
+                            .overlay(AppTheme.secondaryText.opacity(0.12))
+                            .padding(.horizontal, 18)
+                    }
+                }
+            }
+            .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.07), radius: 15, y: 5)
+        }
+    }
+
+    // The grocery, favorite, editing and deletion behavior is unchanged.
     private func itemIsCurrentInCart(_ item: RecipeIngredient) -> Bool {
         guard let matching = cartItems.first(where: { $0.sourceRecipeID == current.id && $0.ingredientID == item.id }) else {
             return false
@@ -267,5 +382,60 @@ struct RecipeDetailView: View {
         } catch {
             deleteFailed = true
         }
+    }
+}
+
+/// Nutrition is intentionally per serving, even when ingredient quantities change.
+/// Calories remain under the recipe title rather than appearing in this panel.
+private struct RecipeNutritionPanel: View {
+    let proteinGrams: Double?
+    let carbsGrams: Double?
+    let fatGrams: Double?
+
+    private var metrics: [(label: String, grams: Double)] {
+        var values: [(label: String, grams: Double)] = []
+        if let proteinGrams { values.append(("Protein", proteinGrams)) }
+        if let carbsGrams { values.append(("Carbs", carbsGrams)) }
+        if let fatGrams { values.append(("Fat", fatGrams)) }
+        return values
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Text("Nutrition per serving")
+                .font(.system(size: 15))
+                .foregroundStyle(AppTheme.secondaryText)
+
+            HStack(alignment: .center, spacing: 0) {
+                ForEach(Array(metrics.enumerated()), id: \.offset) { index, metric in
+                    VStack(spacing: 5) {
+                        Text("\(QuantityText.format(metric.grams)) g")
+                            .font(.system(size: 19, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AppTheme.primaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        Text(metric.label)
+                            .font(.system(size: 15))
+                            .foregroundStyle(AppTheme.primaryGreen)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    if index < metrics.count - 1 {
+                        Rectangle()
+                            .fill(AppTheme.secondaryText.opacity(0.35))
+                            .frame(width: 1, height: 47)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.chipBackground.opacity(0.55), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .strokeBorder(AppTheme.secondaryText.opacity(0.52), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.06), radius: 5, y: 2)
     }
 }

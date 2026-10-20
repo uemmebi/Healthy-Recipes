@@ -28,6 +28,8 @@ private enum MainTab: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var currentTab: MainTab = .recipes
+    @State private var recipesPath = NavigationPath()
+    @State private var youPath = NavigationPath()
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -35,7 +37,7 @@ struct ContentView: View {
             Group {
                 switch currentTab {
                 case .recipes:
-                    NavigationStack {
+                    NavigationStack(path: $recipesPath) {
                         RecipesHomeView()
                             .navigationDestination(for: Recipe.self) { recipe in
                                 RecipeDetailView(recipe: recipe)
@@ -49,14 +51,26 @@ struct ContentView: View {
                 case .groceries:
                     NavigationStack { GroceryListView() }
                 case .you:
-                    PlaceholderTabView(title: "You", symbol: "person.crop.circle", description: "Your profile and preferences will appear here.")
+                    NavigationStack(path: $youPath) {
+                        UserProfileView()
+                            .navigationDestination(for: RecipeCollection.self) { collection in
+                                RecipeCollectionView(collection: collection)
+                            }
+                            .navigationDestination(for: Recipe.self) { recipe in
+                                RecipeDetailView(recipe: recipe)
+                            }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            FloatingTabBar(currentTab: $currentTab)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 8)
+            if (currentTab == .recipes && recipesPath.isEmpty) ||
+                (currentTab == .you && youPath.isEmpty) ||
+                currentTab == .mealPlan || currentTab == .groceries {
+                FloatingTabBar(currentTab: $currentTab)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+            }
         }
         .task {
             await MainActor.run { RecipeSeeds.installIfNeeded(in: modelContext) }
@@ -99,19 +113,14 @@ private struct FloatingTabBar: View {
         .padding(3)
         .frame(height: 56)
         .background {
-            ZStack {
-                Capsule().fill(.ultraThinMaterial)
-                HStack(spacing: 0) {
-                    Circle().fill(AppTheme.softGreen.opacity(0.52))
-                    Circle().fill(Color.orange.opacity(0.17))
-                    Circle().fill(AppTheme.softGreen.opacity(0.30))
-                    Circle().fill(Color.red.opacity(0.19))
-                }
-                .blur(radius: 15)
-            }
-            .clipShape(Capsule())
+            // System glass material only: no artificial colored gradients.
+            Capsule()
+                .fill(.ultraThinMaterial)
         }
-        .overlay { Capsule().strokeBorder(.white.opacity(0.85), lineWidth: 1) }
+        .overlay {
+            Capsule()
+                .strokeBorder(.white.opacity(0.65), lineWidth: 1)
+        }
         .shadow(color: .black.opacity(0.15), radius: 13, x: 0, y: 5)
     }
 }
