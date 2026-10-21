@@ -30,6 +30,9 @@ struct ContentView: View {
     @State private var currentTab: MainTab = .recipes
     @State private var recipesPath = NavigationPath()
     @State private var youPath = NavigationPath()
+    @State private var mealPlanPath = NavigationPath()
+    // Keeps the date/meal chosen from Meal Plan while a recipe is being picked.
+    @State private var mealPlanSuggestion: MealPlanSuggestion?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -38,16 +41,28 @@ struct ContentView: View {
                 switch currentTab {
                 case .recipes:
                     NavigationStack(path: $recipesPath) {
-                        RecipesHomeView()
+                        RecipesHomeView(mealPlanSuggestion: mealPlanSuggestion,
+                                        cancelMealPlanSuggestion: { mealPlanSuggestion = nil })
                             .navigationDestination(for: Recipe.self) { recipe in
-                                RecipeDetailView(recipe: recipe)
+                                RecipeDetailView(recipe: recipe,
+                                                 suggestedMeal: mealPlanSuggestion,
+                                                 onAddedToMealPlan: { mealPlanSuggestion = nil })
                             }
                             .navigationDestination(for: RecipeCollection.self) { collection in
                                 RecipeCollectionView(collection: collection)
                             }
                     }
                 case .mealPlan:
-                    PlaceholderTabView(title: "Meal Plan", symbol: "calendar", description: "Your weekly meal plan will appear here.")
+                    NavigationStack(path: $mealPlanPath) {
+                        MealPlanView { day, slot in
+                            mealPlanSuggestion = MealPlanSuggestion(day: day, slot: slot)
+                            recipesPath = NavigationPath()
+                            withAnimation(.easeOut(duration: 0.2)) { currentTab = .recipes }
+                        }
+                        .navigationDestination(for: Recipe.self) { recipe in
+                            RecipeDetailView(recipe: recipe)
+                        }
+                    }
                 case .groceries:
                     NavigationStack { GroceryListView() }
                 case .you:
@@ -66,7 +81,7 @@ struct ContentView: View {
 
             if (currentTab == .recipes && recipesPath.isEmpty) ||
                 (currentTab == .you && youPath.isEmpty) ||
-                currentTab == .mealPlan || currentTab == .groceries {
+                (currentTab == .mealPlan && mealPlanPath.isEmpty) || currentTab == .groceries {
                 FloatingTabBar(currentTab: $currentTab)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
@@ -127,5 +142,5 @@ private struct FloatingTabBar: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [StoredRecipe.self, GroceryItem.self, UserRecipe.self], inMemory: true)
+        .modelContainer(for: [StoredRecipe.self, GroceryItem.self, UserRecipe.self, MealPlanEntry.self], inMemory: true)
 }

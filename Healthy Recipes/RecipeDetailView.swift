@@ -15,6 +15,9 @@ struct RecipeDetailView: View {
     @Query private var cartItems: [GroceryItem]
 
     let recipe: Recipe
+    var suggestedMeal: MealPlanSuggestion? = nil
+    var onAddedToMealPlan: (() -> Void)? = nil
+    @State private var showingMealPlanSheet = false
     @State private var servings = 1
     @State private var showingEditor = false
     @State private var confirmingDelete = false
@@ -76,6 +79,11 @@ struct RecipeDetailView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { servings = 1 }
+        .sheet(isPresented: $showingMealPlanSheet) {
+            AddToMealPlanSheet(recipe: current, suggestion: suggestedMeal) {
+                onAddedToMealPlan?()
+            }
+        }
         .sheet(isPresented: $showingEditor) {
             if let stored { NavigationStack { RecipeEditorView(existing: stored) } }
         }
@@ -144,7 +152,7 @@ struct RecipeDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(alignment: .center, spacing: 17) {
-                Label("\(current.minutes) min", systemImage: "clock")
+                Label("\(current.minutes) min total", systemImage: "clock")
                 if let calories = current.calories {
                     Label("\(calories) kcal / serving", systemImage: "flame")
                 }
@@ -156,9 +164,8 @@ struct RecipeDetailView: View {
         }
     }
 
-    // Visual placeholder only: Meal Plan functionality is not implemented yet.
     private var addToMealPlanButton: some View {
-        Button(action: {}) {
+        Button { showingMealPlanSheet = true } label: {
             HStack(spacing: 10) {
                 Text("Add to Meal Plan")
                 Image(systemName: "calendar")
@@ -172,7 +179,7 @@ struct RecipeDetailView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Meal Plan feature coming soon")
+        .accessibilityHint("Choose a day and a meal")
     }
 
     private var ingredientsSection: some View {
@@ -372,6 +379,11 @@ struct RecipeDetailView: View {
         guard let stored, stored.isUserCreated else { return }
         for grocery in cartItems where grocery.sourceRecipeID == stored.id {
             modelContext.delete(grocery)
+        }
+        // Keep the weekly plan consistent if a personal recipe is deleted.
+        let plannedEntries = (try? modelContext.fetch(FetchDescriptor<MealPlanEntry>())) ?? []
+        for planned in plannedEntries where planned.recipeID == stored.id {
+            modelContext.delete(planned)
         }
         let oldImageName = stored.imageName
         modelContext.delete(stored)

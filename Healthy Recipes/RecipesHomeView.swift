@@ -10,6 +10,8 @@ import SwiftData
 import UIKit
 
 struct RecipesHomeView: View {
+    var mealPlanSuggestion: MealPlanSuggestion? = nil
+    var cancelMealPlanSuggestion: (() -> Void)? = nil
     @Query(sort: \StoredRecipe.createdAt, order: .forward)
     private var records: [StoredRecipe]
     @State private var searchText = ""
@@ -40,7 +42,7 @@ struct RecipesHomeView: View {
         let catalog = allRecipes.filter { !$0.isUserCreated }
         guard !catalog.isEmpty else { return nil }
 
-        let illustrated = catalog.filter { UIImage(named: $0.imageName) != nil }
+        let illustrated = catalog.filter { RecipeImageStore.image(named: $0.imageName) != nil }
         let available = illustrated.isEmpty ? catalog : illustrated
         let unseen = available.filter { !$0.isFavorite }
         let candidates = unseen.isEmpty ? available : unseen
@@ -86,6 +88,24 @@ struct RecipesHomeView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 18)
 
+                if let mealPlanSuggestion {
+                    HStack(spacing: 8) {
+                        Image(systemName: "calendar.badge.plus")
+                        Text("Choose a recipe for \(mealPlanSuggestion.dayLabel)" +
+                             (mealPlanSuggestion.slot.map { " · \($0.title)" } ?? ""))
+                            .lineLimit(2)
+                        Spacer(minLength: 5)
+                        Button("Cancel") { cancelMealPlanSuggestion?() }
+                            .fontWeight(.semibold)
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppTheme.primaryGreen)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(AppTheme.chipBackground, in: RoundedRectangle(cornerRadius: 13))
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                }
                 searchBar.padding(.horizontal, 16).padding(.top, 15)
                 categoryChips.padding(.top, 16)
 
