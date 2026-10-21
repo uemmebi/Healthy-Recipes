@@ -9,7 +9,6 @@ import Foundation
 import SwiftUI
 import SwiftData
 
-// A meal is linked by its stable recipe ID. No network requests or duplicate recipe data.
 @Model
 final class MealPlanEntry {
     var id: UUID
@@ -55,13 +54,6 @@ struct MealPlanSuggestion: Equatable {
 }
 
 private enum MealPlanDates {
-    static func weekStart(for date: Date) -> Date {
-        var isoCalendar = Calendar(identifier: .iso8601)  // Monday is always first.
-        isoCalendar.timeZone = .current
-        return isoCalendar.dateInterval(of: .weekOfYear, for: date)?.start
-            ?? Calendar.current.startOfDay(for: date)
-    }
-
     static func days(starting firstDay: Date) -> [Date] {
         (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: firstDay) }
     }
@@ -82,7 +74,6 @@ private enum MealPlanDates {
 
     static func normalized(_ date: Date) -> Date { Calendar.current.startOfDay(for: date) }
 
-    /// Shared by the Meal Plan tab and the Add to Meal Plan sheet.
     static func day(at offset: Int) -> Date {
         let today = normalized(.now)
         return Calendar.current.date(byAdding: .day, value: offset, to: today) ?? today
@@ -126,7 +117,6 @@ private enum MealPlanStorage {
     }
 }
 
-/// Shared day card ensures both screens keep precisely the same proportions and style.
 private struct MealPlanDayCard: View {
     let day: Date
     let entries: [MealPlanEntry]
@@ -180,7 +170,7 @@ private struct MealPlanDayCard: View {
                         let assignedRecipe = recipe(for: slot)
                         if !isChoosing, let assignedRecipe {
                             ZStack(alignment: .topTrailing) {
-                                NavigationLink(value: assignedRecipe.asRecipe) {
+                                NavigationLink(value: assignedRecipe.id) {
                                     slotTile(slot, title: assignedRecipe.title, isFilled: true)
                                 }
                                 .buttonStyle(.plain)
@@ -251,7 +241,6 @@ private struct MealPlanDayCard: View {
     }
 }
 
-/// Rolling seven-day plan; tapping + navigates to Recipes. Tapping a day expands it.
 struct MealPlanView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var entries: [MealPlanEntry]
@@ -264,7 +253,6 @@ struct MealPlanView: View {
     @State private var showingError = false
     @State private var initializedDays = false
 
-    // Display today and the following six days. Each arrow moves the window by one day.
     private var firstDay: Date { MealPlanDates.day(at: dayOffset) }
     private var days: [Date] { MealPlanDates.days(starting: firstDay) }
     private var relativeDayLabel: String { MealPlanDates.relativeDayLabel(for: dayOffset) }
@@ -354,7 +342,6 @@ struct MealPlanView: View {
     }
 }
 
-/// Same day cards in selection mode. Pick a slot; an existing meal requires confirmation.
 struct AddToMealPlanSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -374,7 +361,6 @@ struct AddToMealPlanSheet: View {
         self.recipe = recipe
         self.suggestion = suggestion
         self.onAdded = onAdded
-        // Opening from Meal Plan starts on the suggested day, not on Monday.
         let today = MealPlanDates.normalized(.now)
         let suggestedDay = MealPlanDates.normalized(suggestion?.day ?? today)
         let initialOffset = Calendar.current.dateComponents([.day], from: today, to: suggestedDay).day ?? 0

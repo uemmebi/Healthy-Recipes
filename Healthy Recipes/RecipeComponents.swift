@@ -46,7 +46,7 @@ struct FavoriteButton: View {
         } label: {
             Image(systemName: isFavorite ? "heart.fill" : "heart")
                 .font(.system(size: prominent ? 23 : 18, weight: .medium))
-                .foregroundStyle(isFavorite ? AppTheme.heart : AppTheme.primaryText)
+                .foregroundStyle(isFavorite ? AppTheme.primaryGreen : AppTheme.primaryText)
                 .frame(width: prominent ? 43 : 35, height: prominent ? 43 : 35)
                 .background(Circle().fill(Color.white.opacity(0.97)))
                 .contentShape(Circle())
@@ -66,7 +66,7 @@ struct FeaturedRecipeCard: View {
             let height = width * (334.0 / 588.0)
 
             ZStack(alignment: .topTrailing) {
-                NavigationLink(value: recipe) {
+                NavigationLink(value: recipe.id) {
                     RecipeArtwork(recipe: recipe)
                         .frame(width: width, height: height)
                         .clipped()
@@ -116,7 +116,7 @@ struct CompactRecipeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topTrailing) {
-                NavigationLink(value: recipe) {
+                NavigationLink(value: recipe.id) {
                     RecipeArtwork(recipe: recipe)
                         .frame(width: width, height: width).clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -127,7 +127,7 @@ struct CompactRecipeCard: View {
             }
             .frame(width: width, height: width)
 
-            NavigationLink(value: recipe) {
+            NavigationLink(value: recipe.id) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(recipe.title)
                         .font(.system(size: 17, weight: .semibold))
@@ -157,13 +157,12 @@ struct CompactRecipeCard: View {
     }
 }
 
-
 struct VerticalRecipeRow: View {
     let recipe: Recipe
 
     var body: some View {
         HStack(alignment: .center, spacing: 13) {
-            NavigationLink(value: recipe) {
+            NavigationLink(value: recipe.id) {
                 RecipeArtwork(recipe: recipe)
                     .frame(width: 108, height: 104)
                     .clipped()
@@ -171,7 +170,7 @@ struct VerticalRecipeRow: View {
             }
             .buttonStyle(.plain)
 
-            NavigationLink(value: recipe) {
+            NavigationLink(value: recipe.id) {
                 VStack(alignment: .leading, spacing: 9) {
                     Text(recipe.title)
                         .font(.system(size: 17, weight: .semibold))
@@ -203,9 +202,6 @@ struct VerticalRecipeRow: View {
     }
 }
 
-/// Images bundled with the app use their asset name (matching the recipe title).
-/// User-selected images live as JPEG files in Application Support/RecipePhotos.
-/// Both sources are represented by a single String: imageName.
 enum RecipeImageStore {
     static let missingImageName = "NoImage"
     private static let prefix = "user-photo-"
@@ -229,7 +225,6 @@ enum RecipeImageStore {
         return UIImage(named: imageName)
     }
 
-    /// Saves a selected photo separately from SwiftData; only the filename is persisted.
     static func save(_ image: UIImage) throws -> String {
         guard let data = image.jpegData(compressionQuality: 0.78) else {
             throw CocoaError(.fileWriteInapplicableStringEncoding)
@@ -237,7 +232,6 @@ enum RecipeImageStore {
         return try saveJPEGData(data)
     }
 
-    /// Used only when migrating old records that contain inline image bytes.
     static func saveJPEGData(_ data: Data) throws -> String {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let name = prefix + UUID().uuidString + ".jpg"

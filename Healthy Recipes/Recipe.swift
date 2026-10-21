@@ -9,7 +9,6 @@ import Foundation
 import SwiftUI
 import SwiftData
 
-/// Plain UI value. The *only* persisted source of truth is StoredRecipe in SwiftData.
 struct Recipe: Identifiable, Hashable {
     let id: String
     let title: String
@@ -20,7 +19,6 @@ struct Recipe: Identifiable, Hashable {
     let ingredients: [RecipeIngredient]
     let steps: [String]
     let baseServings: Int
-    // Nutrition estimates per single serving, never multiplied by selected servings.
     var proteinGrams: Double? = nil
     var carbsGrams: Double? = nil
     var fatGrams: Double? = nil
@@ -30,7 +28,6 @@ struct Recipe: Identifiable, Hashable {
     var caloriesText: String { calories.map { "~\($0) kcal" } ?? "Calories not provided" }
 }
 
-/// A stable ID allows one shopping-list entry per recipe ingredient.
 struct RecipeIngredient: Identifiable, Codable, Hashable {
     var id: String
     var name: String
@@ -54,10 +51,6 @@ enum QuantityText {
         amount.formatted(.number.precision(.fractionLength(0...2)))
     }
 
-    static func ingredient(_ item: RecipeIngredient, servings: Int, base: Int) -> String {
-        let amount = format(item.scaled(for: servings, from: base))
-        return "\(amount) \(item.unit) \(item.name)"
-    }
 }
 
 enum RecipeCategory: String, CaseIterable, Codable, Hashable, Identifiable {
@@ -86,16 +79,12 @@ enum RecipeCategory: String, CaseIterable, Codable, Hashable, Identifiable {
     }
 }
 
-/// App-specific discovery labels, not regulated nutrition claims.
-/// Missing macros do not trigger nutrition-based labels.
 enum RecipeClassification {
     static func categories(minutes: Int, ingredients: [RecipeIngredient],
                            protein: Double?, carbs: Double?, fat: Double?,
                            chosen: Set<RecipeCategory>) -> Set<RecipeCategory> {
-        // Only Vegetarian can be set manually for now. Everything else is derived.
         var result = chosen.intersection([.vegetarian])
         if minutes < 20 { result.insert(.quick) }
-        // Require pasta as an ingredient; zucchini noodles and rice noodles are not pasta.
         let pastaNames = #"\b(pasta|spaghetti|penne|fusilli|linguine|macaroni|farfalle|rigatoni|tagliatelle|fettuccine|lasagne|lasagna|orecchiette|tortellini)\b"#
         if ingredients.contains(where: { $0.name.range(of: pastaNames,
                                                        options: [.regularExpression, .caseInsensitive]) != nil }) {
@@ -111,7 +100,6 @@ enum RecipeClassification {
     }
 }
 
-/// Catalog recipes AND user recipes share the same SwiftData model.
 @Model
 final class StoredRecipe {
     var id: String
@@ -129,8 +117,6 @@ final class StoredRecipe {
     var ingredientUnits: [String]
     var steps: [String]
     var baseServings: Int
-    // Legacy image bytes kept only to migrate existing user photos without data loss.
-    @Attribute(.externalStorage) var photoData: Data?
     var isUserCreated: Bool
     var isFavorite: Bool
     var createdAt: Date
@@ -158,13 +144,11 @@ final class StoredRecipe {
         self.ingredientUnits = ingredients.map(\.unit)
         self.steps = steps
         self.baseServings = max(1, baseServings)
-        self.photoData = nil
         self.isUserCreated = isUserCreated
         self.isFavorite = isFavorite
         self.createdAt = .now
     }
 
-    /// Stored directly as SwiftData arrays, with no JSON file or JSON serialization.
     var ingredients: [RecipeIngredient] {
         get {
             let count = min(ingredientIDs.count, ingredientNames.count,
@@ -195,7 +179,6 @@ final class StoredRecipe {
     }
 }
 
-/// Shopping list also lives in the same local SwiftData database.
 @Model
 final class GroceryItem {
     var id: String

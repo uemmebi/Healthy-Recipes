@@ -8,8 +8,6 @@
 import Foundation
 import SwiftData
 
-/// Seed catalog is written in Swift, not a bundled JSON file.
-/// Catalog content is updated by stable ID, preserving favorites and personal recipes.
 @MainActor
 enum RecipeSeeds {
     static func installIfNeeded(in context: ModelContext) {
@@ -18,20 +16,7 @@ enum RecipeSeeds {
             let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let allSeeds = catalog()
 
-            // One-time conversion of existing user photos from Data? to filename String.
-            // Keep the old photoData property in the schema for safe migration.
-            for record in existing where record.isUserCreated && record.photoData != nil {
-                if let bytes = record.photoData {
-                    let newName = try RecipeImageStore.saveJPEGData(bytes)
-                    record.imageName = newName
-                    record.photoData = nil
-                }
-            }
-
-            // The SwiftData record is the source of truth. Identifiers for shipped
-            // ingredients are deterministic so grocery cart links survive app launches.
             for seed in allSeeds {
-                // Per-serving editorial nutrition estimates. The values are not certified.
                 if let estimate = nutritionEstimates[seed.id] {
                     seed.proteinGrams = estimate.protein
                     seed.carbsGrams = estimate.carbs
@@ -49,7 +34,6 @@ enum RecipeSeeds {
                 }
                 if let stored = existingByID[seed.id] {
                     guard !stored.isUserCreated else { continue }
-                    // Refresh built-in catalog content while retaining favorites.
                     if stored.title != seed.title { stored.title = seed.title }
                     if stored.imageName != seed.imageName { stored.imageName = seed.imageName }
                     if stored.calories != seed.calories { stored.calories = seed.calories }
@@ -61,8 +45,6 @@ enum RecipeSeeds {
                     if stored.steps != seed.steps { stored.steps = seed.steps }
                     if stored.baseServings != seed.baseServings { stored.baseServings = seed.baseServings }
                     if stored.ingredients != seed.ingredients {
-                        // Match existing grocery items by ingredient position to
-                        // retain their relationship with the updated stable IDs.
                         let oldIngredients = stored.ingredients
                         let groceries = try context.fetch(FetchDescriptor<GroceryItem>())
                         for (index, item) in oldIngredients.enumerated() where index < seed.ingredients.count {
@@ -77,36 +59,12 @@ enum RecipeSeeds {
                 }
             }
 
-            // Remove the retired built-in Parmigiana only, not user-created recipes.
             for old in existing where !old.isUserCreated && (
                 old.id == "catalog-parmigiana" ||
                 old.title.localizedCaseInsensitiveContains("Parmigiana di melanzane")) {
                 context.delete(old)
             }
 
-            // Recover personal recipes created with the previous data model.
-            let previous = try context.fetch(FetchDescriptor<UserRecipe>())
-            for old in previous where existingByID[old.id] == nil {
-                let oldIngredients = old.ingredientsText.components(separatedBy: .newlines)
-                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-                    .map { RecipeIngredient(name: $0, quantity: 1, unit: "pcs") }
-                let steps = old.stepsText.components(separatedBy: .newlines)
-                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-                let migratedName: String
-                if let bytes = old.photoData {
-                    migratedName = try RecipeImageStore.saveJPEGData(bytes)
-                } else {
-                    migratedName = RecipeImageStore.missingImageName
-                }
-                context.insert(StoredRecipe(
-                    id: old.id, title: old.title, minutes: old.minutes,
-                    calories: old.calories, imageName: migratedName,
-                    categories: old.categoryNames.compactMap(RecipeCategory.init(rawValue:)),
-                    ingredients: oldIngredients, steps: steps, baseServings: 1,
-                    isUserCreated: true))
-            }
             try context.save()
         } catch {
             print("SwiftData catalog update failed: \(error)")
@@ -121,10 +79,6 @@ enum RecipeSeeds {
         initialCatalog() + additionalCatalog()
     }
 
-    // Grams per ONE portion. Editorial approximations using ingredient-based
-    // reference compositions (USDA FoodData Central) and published dish examples.
-    // Not individually lab-tested or a nutrition-label database. See docs/NUTRITION_SOURCES.md.
-    // Keys match the IDs below, so updates preserve user favorites.
     private static let nutritionEstimates: [String: (protein: Double, carbs: Double, fat: Double)] = [
         "catalog-salmon-bowl": (40, 72, 28),
         "catalog-caprese": (13, 10, 18),
@@ -272,7 +226,6 @@ enum RecipeSeeds {
             )
         ]
     }
-    // More curated recipes. Kept here so the whole catalog lives in one Swift file.
     private static func additionalCatalog() -> [StoredRecipe] {
         [
             StoredRecipe(

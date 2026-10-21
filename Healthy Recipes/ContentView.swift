@@ -27,11 +27,11 @@ private enum MainTab: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query private var storedRecipes: [StoredRecipe]
     @State private var currentTab: MainTab = .recipes
     @State private var recipesPath = NavigationPath()
     @State private var youPath = NavigationPath()
     @State private var mealPlanPath = NavigationPath()
-    // Keeps the date/meal chosen from Meal Plan while a recipe is being picked.
     @State private var mealPlanSuggestion: MealPlanSuggestion?
 
     var body: some View {
@@ -43,10 +43,13 @@ struct ContentView: View {
                     NavigationStack(path: $recipesPath) {
                         RecipesHomeView(mealPlanSuggestion: mealPlanSuggestion,
                                         cancelMealPlanSuggestion: { mealPlanSuggestion = nil })
-                            .navigationDestination(for: Recipe.self) { recipe in
-                                RecipeDetailView(recipe: recipe,
+                            .navigationDestination(for: String.self) { recipeID in
+                                if let recipe = storedRecipes.first(where: { $0.id == recipeID })?.asRecipe {
+                                    RecipeDetailView(recipe: recipe,
                                                  suggestedMeal: mealPlanSuggestion,
-                                                 onAddedToMealPlan: { mealPlanSuggestion = nil })
+                                                 onAddedToMealPlan: { mealPlanSuggestion = nil },
+                                                 onBack: { if !recipesPath.isEmpty { recipesPath.removeLast() } })
+                                }
                             }
                             .navigationDestination(for: RecipeCollection.self) { collection in
                                 RecipeCollectionView(collection: collection)
@@ -59,8 +62,11 @@ struct ContentView: View {
                             recipesPath = NavigationPath()
                             withAnimation(.easeOut(duration: 0.2)) { currentTab = .recipes }
                         }
-                        .navigationDestination(for: Recipe.self) { recipe in
-                            RecipeDetailView(recipe: recipe)
+                        .navigationDestination(for: String.self) { recipeID in
+                            if let recipe = storedRecipes.first(where: { $0.id == recipeID })?.asRecipe {
+                                RecipeDetailView(recipe: recipe,
+                                                 onBack: { if !mealPlanPath.isEmpty { mealPlanPath.removeLast() } })
+                            }
                         }
                     }
                 case .groceries:
@@ -71,8 +77,11 @@ struct ContentView: View {
                             .navigationDestination(for: RecipeCollection.self) { collection in
                                 RecipeCollectionView(collection: collection)
                             }
-                            .navigationDestination(for: Recipe.self) { recipe in
-                                RecipeDetailView(recipe: recipe)
+                            .navigationDestination(for: String.self) { recipeID in
+                                if let recipe = storedRecipes.first(where: { $0.id == recipeID })?.asRecipe {
+                                    RecipeDetailView(recipe: recipe,
+                                                     onBack: { if !youPath.isEmpty { youPath.removeLast() } })
+                                }
                             }
                     }
                 }
@@ -128,7 +137,6 @@ private struct FloatingTabBar: View {
         .padding(3)
         .frame(height: 56)
         .background {
-            // System glass material only: no artificial colored gradients.
             Capsule()
                 .fill(.ultraThinMaterial)
         }
@@ -142,5 +150,5 @@ private struct FloatingTabBar: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [StoredRecipe.self, GroceryItem.self, UserRecipe.self, MealPlanEntry.self], inMemory: true)
+        .modelContainer(for: [StoredRecipe.self, GroceryItem.self, MealPlanEntry.self], inMemory: true)
 }

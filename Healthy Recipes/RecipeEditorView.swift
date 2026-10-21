@@ -69,7 +69,6 @@ struct RecipeEditorView: View {
         self.existing = existing
         _title = State(initialValue: existing?.title ?? "")
         _minutesText = State(initialValue: existing.map { String($0.minutes) } ?? "")
-        // Stored nutrition is per single serving; the editor shows totals for baseServings.
         let servings = min(24, max(1, existing?.baseServings ?? 1))
         _caloriesText = State(initialValue: existing?.calories.map { String($0 * servings) } ?? "")
         _proteinText = State(initialValue: existing?.proteinGrams.map { QuantityText.format($0 * Double(servings)) } ?? "")
@@ -116,7 +115,6 @@ struct RecipeEditorView: View {
             optionalNonnegative(carbsText) &&
             optionalNonnegative(fatText) &&
             !ingredients.isEmpty && ingredients.allSatisfy(\.isValid)
-        // Photo, vegetarian status, calories, macros and preparation steps are optional.
     }
 
     var body: some View {
@@ -162,7 +160,6 @@ struct RecipeEditorView: View {
             Text("Please try again. Your changes are still in the form.")
         }
     }
-
 
     private var photoSection: some View {
         Section("Photo (optional)") {
@@ -370,7 +367,6 @@ struct RecipeEditorView: View {
         let newSteps = steps.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
-        // Keep the previous file until the database update succeeds.
         let previousName = existing?.imageName ?? RecipeImageStore.missingImageName
         let chosenName: String
         do {
@@ -396,7 +392,6 @@ struct RecipeEditorView: View {
             existing.categoryNames = categoriesList.map(\.rawValue)
             existing.ingredients = newIngredients
             existing.steps = newSteps
-            existing.photoData = nil // Old SwiftData image bytes are no longer needed.
         } else {
             let newRecipe = StoredRecipe(
                 id: "user-" + UUID().uuidString,

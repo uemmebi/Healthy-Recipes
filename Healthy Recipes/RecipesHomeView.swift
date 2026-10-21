@@ -7,7 +7,6 @@
 
 import SwiftUI
 import SwiftData
-import UIKit
 
 struct RecipesHomeView: View {
     var mealPlanSuggestion: MealPlanSuggestion? = nil
@@ -16,7 +15,6 @@ struct RecipesHomeView: View {
     private var records: [StoredRecipe]
     @State private var searchText = ""
     @State private var selectedCategory: RecipeCategory = .all
-    @State private var showMicrophoneAlert = false
     @State private var showingNewRecipe = false
 
     private var allRecipes: [Recipe] { records.map(\.asRecipe) }
@@ -29,52 +27,26 @@ struct RecipesHomeView: View {
             || recipe.ingredients.contains { $0.name.localizedCaseInsensitiveContains(term) }
         return textMatch && (selectedCategory == .all || recipe.categories.contains(selectedCategory))
     }
-    // Never duplicate a result even if it is also in Favorites or Created by You.
     private var searchResults: [Recipe] {
         var seen = Set<String>()
         return allRecipes.filter { matches($0) && seen.insert($0.id).inserted }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
-    /// A simple, fully on-device recommendation. Favorite categories are weighted
-    /// most heavily; equal-scoring recipes rotate daily to keep the home fresh.
-    /// Prefer recipes with bundled artwork while the image catalog is incomplete.
     private var featured: Recipe? {
-        let catalog = allRecipes.filter { !$0.isUserCreated }
+        let catalog = allRecipes.filter { !$0.isUserCreated }.sorted { $0.id < $1.id }
         guard !catalog.isEmpty else { return nil }
-
-        let illustrated = catalog.filter { RecipeImageStore.image(named: $0.imageName) != nil }
-        let available = illustrated.isEmpty ? catalog : illustrated
-        let unseen = available.filter { !$0.isFavorite }
-        let candidates = unseen.isEmpty ? available : unseen
-
-        let favoriteCategories = allRecipes.filter(\.isFavorite).flatMap(\.categories)
-        let scores: [RecipeCategory: Int] = favoriteCategories.reduce(into: [:]) { counts, category in
-            counts[category, default: 0] += 1
-        }
-        let ranked = candidates.map { recipe in
-            (recipe: recipe, score: recipe.categories.reduce(0) { $0 + scores[$1, default: 0] })
-        }
-        let highest = ranked.map(\.score).max() ?? 0
-        let matches = ranked.filter { $0.score == highest }
-            .map(\.recipe)
-            .sorted { $0.id < $1.id }
-        guard !matches.isEmpty else { return nil }
-
         let day = Int(Calendar.current.startOfDay(for: .now).timeIntervalSince1970 / 86_400)
-        return matches[day % matches.count]
+        return catalog[day % catalog.count]
     }
+
     private var created: [Recipe] { allRecipes.filter(\.isUserCreated) }
-    private var favorites: [Recipe] {
-        allRecipes.filter { $0.isFavorite && !$0.isUserCreated && $0.id != featured?.id }
-    }
+    private var favorites: [Recipe] { allRecipes.filter(\.isFavorite) }
     private var quick: [Recipe] {
-        let excluded = Set(created.map(\.id) + favorites.map(\.id) + [featured?.id].compactMap { $0 })
-        return allRecipes.filter {
-            $0.categories.contains(.quick) && !excluded.contains($0.id)
-        }
+        let excluded = Set(created.map(\.id) + [featured?.id].compactMap { $0 })
+        return allRecipes.filter { $0.categories.contains(.quick) && !excluded.contains($0.id) }
     }
     private var remaining: [Recipe] {
-        let excluded = Set(created.map(\.id) + favorites.map(\.id) + quick.map(\.id) + [featured?.id].compactMap { $0 })
+        let excluded = Set(created.map(\.id) + quick.map(\.id) + [featured?.id].compactMap { $0 })
         return allRecipes.filter { !excluded.contains($0.id) }
     }
 
@@ -110,7 +82,6 @@ struct RecipesHomeView: View {
                 categoryChips.padding(.top, 16)
 
                 if isSearching {
-                    // During a search show only recipes, with NO section titles or See all links.
                     if searchResults.isEmpty {
                         emptyResults.padding(.top, 65)
                     } else {
@@ -131,7 +102,6 @@ struct RecipesHomeView: View {
                     if !favorites.isEmpty {
                         catalogSection("Your Favorites", collection: .favorites, recipes: favorites)
                     }
-                    // Personal recipes are shown only after the first one is saved.
                     if !created.isEmpty {
                         catalogSection("Created by You", collection: .createdByYou, recipes: created)
                     }
@@ -143,7 +113,6 @@ struct RecipesHomeView: View {
             .padding(.bottom, 165)
         }
         .background(AppTheme.background)
-        // Attached only to the home view: a pushed recipe detail doesn't contain this button.
         .overlay(alignment: .bottom) {
             Button { showingNewRecipe = true } label: {
                 Label("Create a Recipe", systemImage: "plus.circle.fill")
@@ -155,7 +124,7 @@ struct RecipesHomeView: View {
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 24)
-            .padding(.bottom, 76) // Above the persistent floating tab bar.
+            .padding(.bottom, 76)
             .accessibilityIdentifier("create-recipe-button")
         }
         .sheet(isPresented: $showingNewRecipe) {
@@ -163,14 +132,8 @@ struct RecipesHomeView: View {
                 .tint(AppTheme.primaryGreen)
         }
         .toolbar(.hidden, for: .navigationBar)
-        .alert("Voice Search", isPresented: $showMicrophoneAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Voice search is not yet available. Try typing a recipe or ingredient.")
-        }
     }
 
-    // The regular home keeps the original image-led, horizontally scrolling cards.
     private func catalogSection(_ title: String, collection: RecipeCollection, recipes: [Recipe]) -> some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack(alignment: .firstTextBaseline) {
@@ -217,18 +180,12 @@ struct RecipesHomeView: View {
                 .autocorrectionDisabled()
                 .submitLabel(.search)
                 .accessibilityIdentifier("recipe-search")
-            if searchText.isEmpty {
-                Button { showMicrophoneAlert = true } label: {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 21))
-                        .foregroundStyle(Color.gray.opacity(0.82))
-                        .frame(width: 30, height: 40)
-                }.buttonStyle(.plain)
-            } else {
+            if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
-                }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.leading, 14).padding(.trailing, 11)

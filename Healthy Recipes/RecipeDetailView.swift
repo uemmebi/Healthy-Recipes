@@ -17,12 +17,21 @@ struct RecipeDetailView: View {
     let recipe: Recipe
     var suggestedMeal: MealPlanSuggestion? = nil
     var onAddedToMealPlan: (() -> Void)? = nil
+    var onBack: (() -> Void)? = nil
     @State private var showingMealPlanSheet = false
     @State private var servings = 1
     @State private var showingEditor = false
     @State private var confirmingDelete = false
     @State private var deleteFailed = false
     @State private var showingAdded = false
+
+    private func goBack() {
+        if let onBack {
+            onBack()
+        } else {
+            dismiss()
+        }
+    }
 
     private var stored: StoredRecipe? { storedRecipes.first { $0.id == recipe.id } }
     private var current: Recipe { stored?.asRecipe ?? recipe }
@@ -37,12 +46,14 @@ struct RecipeDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
                     .padding(.bottom, 15)
+                    .zIndex(1)
 
                 RecipeArtwork(recipe: current)
                     .frame(height: 195)
                     .frame(maxWidth: .infinity)
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .allowsHitTesting(false)
                     .padding(.bottom, 17)
 
                 titleAndSummary
@@ -75,8 +86,7 @@ struct RecipeDetailView: View {
             .padding(.bottom, 120)
         }
         .background(AppTheme.background.ignoresSafeArea())
-        // A custom header matches the Sketch mockup without changing navigation behavior.
-        .navigationBarBackButtonHidden(true)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { servings = 1 }
         .sheet(isPresented: $showingMealPlanSheet) {
@@ -100,7 +110,7 @@ struct RecipeDetailView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Button { dismiss() } label: {
+            Button { goBack() } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 23, weight: .medium))
@@ -344,7 +354,6 @@ struct RecipeDetailView: View {
         }
     }
 
-    // The grocery, favorite, editing and deletion behavior is unchanged.
     private func itemIsCurrentInCart(_ item: RecipeIngredient) -> Bool {
         guard let matching = cartItems.first(where: { $0.sourceRecipeID == current.id && $0.ingredientID == item.id }) else {
             return false
@@ -380,7 +389,6 @@ struct RecipeDetailView: View {
         for grocery in cartItems where grocery.sourceRecipeID == stored.id {
             modelContext.delete(grocery)
         }
-        // Keep the weekly plan consistent if a personal recipe is deleted.
         let plannedEntries = (try? modelContext.fetch(FetchDescriptor<MealPlanEntry>())) ?? []
         for planned in plannedEntries where planned.recipeID == stored.id {
             modelContext.delete(planned)
@@ -390,15 +398,13 @@ struct RecipeDetailView: View {
         do {
             try modelContext.save()
             RecipeImageStore.deleteIfLocal(named: oldImageName)
-            dismiss()
+            goBack()
         } catch {
             deleteFailed = true
         }
     }
 }
 
-/// Nutrition is intentionally per serving, even when ingredient quantities change.
-/// Calories remain under the recipe title rather than appearing in this panel.
 private struct RecipeNutritionPanel: View {
     let proteinGrams: Double?
     let carbsGrams: Double?

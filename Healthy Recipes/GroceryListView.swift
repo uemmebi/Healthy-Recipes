@@ -9,7 +9,6 @@ import Foundation
 import SwiftUI
 import SwiftData
 
-/// Groceries uses the existing GroceryItem SwiftData model. No database migration is needed.
 struct GroceryListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \GroceryItem.addedAt, order: .forward) private var groceries: [GroceryItem]
@@ -17,8 +16,6 @@ struct GroceryListView: View {
     @State private var showingAddItem = false
 
     private var sections: [GrocerySection] {
-        // Each ingredient is still a separate SwiftData record (and remains linked to
-        // its recipe). Only identical names AND units are combined for display.
         let byIngredient = Dictionary(grouping: groceries) { item in
             let name = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
                 .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
@@ -69,7 +66,6 @@ struct GroceryListView: View {
                 Spacer()
 
                 if !groceries.isEmpty {
-                    // A real iOS share sheet with a plain-text checklist (☐ / ☑).
                     ShareLink(item: shareText) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 25, weight: .regular))
@@ -135,7 +131,7 @@ struct GroceryListView: View {
                 .scrollContentBackground(.hidden)
                 .environment(\.defaultMinListRowHeight, 0)
                 .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(height: 85) // Space for the custom floating tab bar.
+                    Color.clear.frame(height: 85)
                 }
             }
         }
@@ -160,7 +156,6 @@ struct GroceryListView: View {
     }
 
     private func addManualItem(name: String, quantity: Double, unit: String) {
-        // Reuse the existing initializer so the SwiftData schema and recipe links stay unchanged.
         let manualRecipe = Recipe(id: "manual-groceries", title: "Added manually",
                                   minutes: 0, calories: nil, categories: [],
                                   ingredients: [], steps: [], baseServings: 1)
@@ -238,8 +233,6 @@ private struct GroceryCard: View {
     }
 }
 
-/// A display-only category derived from the ingredient name.
-/// No change to the SwiftData GroceryItem model is necessary.
 private enum GroceryCategory: String, CaseIterable {
     case fresh, pantry, dairy, bakery, meatFish, frozen, other
 

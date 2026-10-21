@@ -10,7 +10,6 @@ import SwiftData
 import PhotosUI
 import UIKit
 
-/// Editable profile and recipe collections.
 struct UserProfileView: View {
     @AppStorage("healthyRecipes.profile.displayName") private var displayName = ""
     @AppStorage("healthyRecipes.profile.imageName") private var imageName = "NoImage"
@@ -71,7 +70,7 @@ struct UserProfileView: View {
 
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 115) // Space for the existing floating tab bar.
+            .padding(.bottom, 115)
         }
         .background(AppTheme.background)
         .toolbar(.hidden, for: .navigationBar)
